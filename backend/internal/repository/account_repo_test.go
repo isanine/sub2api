@@ -156,3 +156,11 @@ func (parameterLimitRows) Close() error {
 func (parameterLimitRows) Next([]driver.Value) error {
 	return io.EOF
 }
+
+func TestParseInt64JSONArray(t *testing.T) {
+	require.Equal(t, []int64{}, parseInt64JSONArray(nil))
+	require.Equal(t, []int64{}, parseInt64JSONArray([]byte(`not-json`)))
+	require.Equal(t, []int64{}, parseInt64JSONArray([]byte(`[]`)))
+	require.Equal(t, []int64{2, 7}, parseInt64JSONArray([]byte(`[{"group_id":2,"priority":50},{"group_id":7,"priority":90}]`)))
+	require.Equal(t, []int64{}, parseInt64JSONArray([]byte(`[{"priority":50}]`)))
+}

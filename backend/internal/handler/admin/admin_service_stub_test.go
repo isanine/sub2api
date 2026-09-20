@@ -833,3 +833,16 @@ func (s *stubAdminService) CreateShadow(ctx context.Context, parentID int64, opt
 
 // Ensure stub implements interface.
 var _ service.AdminService = (*stubAdminService)(nil)
+
+
+func (s *stubAdminService) ListAccountRecycleBin(ctx context.Context, limit int) ([]service.AccountRecycleBinEntry, error) {
+	return nil, nil
+}
+
+func (s *stubAdminService) RestoreAccountFromRecycleBin(ctx context.Context, binID int64) (*service.Account, error) {
+	return nil, nil
+}
+
+func (s *stubAdminService) PurgeAccountRecycleBinEntry(ctx context.Context, binID int64) error {
+	return nil
+}

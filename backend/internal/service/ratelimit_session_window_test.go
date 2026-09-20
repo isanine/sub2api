@@ -441,3 +441,15 @@ func TestUpdateSessionWindow_NoStatusHeader(t *testing.T) {
 		t.Errorf("expected no calls when status header absent, got %d", len(repo.sessionWindowCalls))
 	}
 }
+
+func (m *sessionWindowMockRepo) ListAccountRecycleBin(ctx context.Context, limit int) ([]AccountRecycleBinEntry, error) {
+	return nil, nil
+}
+
+func (m *sessionWindowMockRepo) RestoreAccountFromRecycleBin(ctx context.Context, binID int64) (*Account, error) {
+	return nil, nil
+}
+
+func (m *sessionWindowMockRepo) PurgeAccountRecycleBinEntry(ctx context.Context, binID int64) error {
+	return nil
+}

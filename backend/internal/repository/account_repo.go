@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ import (
 	dbproxy "github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 
@@ -908,6 +910,17 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 		txClient = r.client
 	}
 
+	// 回收站：删除前在同一事务内保存完整行快照与分组关系，可后台还原。
+	operator := service.AccountRecycleOperatorFromContext(ctx)
+	if _, err := txClient.ExecContext(ctx, `
+		INSERT INTO accounts_recycle_bin (account_id, platform, name, type, snapshot, group_rows, deleted_by, deleted_by_email)
+		SELECT a.id, a.platform, a.name, a.type, to_jsonb(a),
+		       COALESCE((SELECT jsonb_agg(to_jsonb(ag_) ORDER BY ag_.group_id)
+		                 FROM account_groups ag_ WHERE ag_.account_id = a.id), '[]'::jsonb),
+		       $2, $3
+		FROM accounts a WHERE a.id = $1`, id, operator.UserID, operator.Email); err != nil {
+		return err
+	}
 	if _, err := txClient.AccountGroup.Delete().Where(dbaccountgroup.AccountIDEQ(id)).Exec(ctx); err != nil {
 		return err
 	}
@@ -927,7 +940,154 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, buildSchedulerGroupPayload(groupIDs)); err != nil {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue account delete failed: account=%d err=%v", id, err)
 	}
+	// 机会式清理过期回收站条目（保留天数外的），失败不影响删除本身。
+	if _, err := r.client.ExecContext(ctx,
+		"DELETE FROM accounts_recycle_bin WHERE deleted_at < now() - make_interval(days => $1)",
+		service.AccountRecycleBinRetentionDays); err != nil {
+		logger.LegacyPrintf("repository.account", "[RecycleBin] retention cleanup failed: %v", err)
+	}
 	return nil
+}
+
+// ListAccountRecycleBin 返回回收站条目摘要（最近删除优先），不含快照凭证。
+func (r *accountRepository) ListAccountRecycleBin(ctx context.Context, limit int) ([]service.AccountRecycleBinEntry, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := r.client.QueryContext(ctx, `
+		SELECT id, account_id, platform, name, type, group_rows, deleted_by, deleted_by_email, deleted_at
+		FROM accounts_recycle_bin
+		ORDER BY deleted_at DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrAccountNotFound, nil)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make([]service.AccountRecycleBinEntry, 0, limit)
+	for rows.Next() {
+		var entry service.AccountRecycleBinEntry
+		var groupRows []byte
+		if err := rows.Scan(&entry.ID, &entry.AccountID, &entry.Platform, &entry.Name, &entry.Type,
+			&groupRows, &entry.DeletedBy, &entry.DeletedByEmail, &entry.DeletedAt); err != nil {
+			return nil, err
+		}
+		entry.GroupIDs = parseInt64JSONArray(groupRows)
+		out = append(out, entry)
+	}
+	return out, rows.Err()
+}
+
+// RestoreAccountFromRecycleBin 还原：按原 ID 重建账号行、恢复分组关系、删除条目。
+func (r *accountRepository) RestoreAccountFromRecycleBin(ctx context.Context, binID int64) (*service.Account, error) {
+	tx, err := r.client.Tx(ctx)
+	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+		return nil, err
+	}
+	committed := false
+	if tx != nil {
+		defer func() {
+			if !committed {
+				_ = tx.Rollback()
+			}
+		}()
+	}
+	txClient := r.client
+	if tx != nil {
+		txClient = tx.Client()
+	}
+
+	// 锁定条目并取出快照。
+	var (
+		accountID int64
+		snapshot  []byte
+		groupRows []byte
+	)
+	binRows, err := txClient.QueryContext(ctx, `
+		SELECT account_id, snapshot::text, group_rows::text
+		FROM accounts_recycle_bin WHERE id = $1 FOR UPDATE`, binID)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrAccountNotFound, nil)
+	}
+	if err := func() error {
+		defer func() { _ = binRows.Close() }()
+		if !binRows.Next() {
+			if err := binRows.Err(); err != nil {
+				return err
+			}
+			return service.ErrAccountNotFound
+		}
+		return binRows.Scan(&accountID, &snapshot, &groupRows)
+	}(); err != nil {
+		return nil, translatePersistenceError(err, service.ErrAccountNotFound, nil)
+	}
+	// 原账号 ID 已被占用（不应发生：ID 序列不复用）时拒绝还原，避免冲突。
+	conflictRows, err := txClient.QueryContext(ctx, "SELECT 1 FROM accounts WHERE id = $1", accountID)
+	if err != nil {
+		return nil, err
+	}
+	conflict := func() bool {
+		defer func() { _ = conflictRows.Close() }()
+		return conflictRows.Next()
+	}()
+	if conflict {
+		return nil, infraerrors.Conflict("ACCOUNT_ID_CONFLICT",
+			fmt.Sprintf("account %d already exists; purge the recycle bin entry instead", accountID))
+	}
+	// 按快照整行重建（保留原 ID / 时间戳 / 凭证 / extra）。
+	if _, err := txClient.ExecContext(ctx,
+		"INSERT INTO accounts SELECT * FROM jsonb_populate_record(NULL::accounts, $1::jsonb)", snapshot); err != nil {
+		return nil, err
+	}
+	// 恢复分组关系（分组本身已删除的跳过）。
+	if _, err := txClient.ExecContext(ctx, `
+		INSERT INTO account_groups (account_id, group_id, priority, created_at)
+		SELECT $1, (row_ ->> 'group_id')::bigint,
+		       COALESCE((row_ ->> 'priority')::int, 50),
+		       COALESCE((row_ ->> 'created_at')::timestamptz, now())
+		FROM jsonb_array_elements($2::jsonb) AS row_
+		WHERE EXISTS (SELECT 1 FROM groups g WHERE g.id = (row_ ->> 'group_id')::bigint)
+		ON CONFLICT DO NOTHING`, accountID, groupRows); err != nil {
+		return nil, err
+	}
+	if _, err := txClient.ExecContext(ctx, "DELETE FROM accounts_recycle_bin WHERE id = $1", binID); err != nil {
+		return nil, err
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		committed = true
+	}
+	// 调度器感知账号恢复。
+	groupIDs := parseInt64JSONArray(groupRows)
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &accountID, nil, buildSchedulerGroupPayload(groupIDs)); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue account restore failed: account=%d err=%v", accountID, err)
+	}
+	return r.GetByID(ctx, accountID)
+}
+
+// PurgeAccountRecycleBinEntry 永久删除回收站条目。
+func (r *accountRepository) PurgeAccountRecycleBinEntry(ctx context.Context, binID int64) error {
+	_, err := r.client.ExecContext(ctx, "DELETE FROM accounts_recycle_bin WHERE id = $1", binID)
+	if err != nil {
+		return translatePersistenceError(err, service.ErrAccountNotFound, nil)
+	}
+	return nil
+}
+
+// parseInt64JSONArray 从 [{...,"group_id":N,...}] 形状的 JSON 数组提取 group_id 列表。
+func parseInt64JSONArray(raw []byte) []int64 {
+	out := []int64{}
+	var rows []map[string]any
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return out
+	}
+	for _, row := range rows {
+		if v, ok := row["group_id"].(float64); ok {
+			out = append(out, int64(v))
+		}
+	}
+	return out
 }
 
 func (r *accountRepository) List(ctx context.Context, params pagination.PaginationParams) ([]service.Account, *pagination.PaginationResult, error) {

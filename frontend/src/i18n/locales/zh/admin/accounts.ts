@@ -675,7 +675,21 @@ export default {
         official: '{platform} 官方 API'
       },
       // OpenAI specific hints
-      openai: {
+      recycleBin: {
+      title: '账号回收站',
+      desc: '删除账号时自动保存完整快照（含凭证、分组关系），30 天内可还原；还原会保留原账号 ID，历史用量记录关联不丢失。也可永久删除。',
+      empty: '回收站是空的',
+      name: '账号名称',
+      platform: '平台',
+      type: '类型',
+      deletedAt: '删除时间',
+      deletedBy: '操作人',
+      actions: '操作',
+      restore: '还原',
+      purge: '永久删除',
+      purgeConfirm: '确认永久删除「{name}」？此操作不可恢复，账号快照（含凭证）将被彻底清除。',
+    },
+    openai: {
         baseUrlHint: '留空使用官方 OpenAI API',
         apiKeyHint: '您的 OpenAI API Key',
         oauthPassthrough: '自动透传（仅替换认证）',

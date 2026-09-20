@@ -278,6 +278,45 @@ export async function deleteAccount(id: number): Promise<{ message: string }> {
   return data
 }
 
+/** 回收站条目（不含凭证快照） */
+export interface AccountRecycleBinEntry {
+  id: number
+  account_id: number
+  platform: string
+  name: string
+  type: string
+  group_ids: number[]
+  deleted_by: number
+  deleted_by_email: string
+  deleted_at: string
+}
+
+/**
+ * 列出账号回收站（最近删除优先）
+ */
+export async function listAccountRecycleBin(limit = 200): Promise<AccountRecycleBinEntry[]> {
+  const { data } = await apiClient.get<{ items: AccountRecycleBinEntry[] }>('/admin/accounts/recycle-bin', {
+    params: { limit },
+  })
+  return data.items ?? []
+}
+
+/**
+ * 从回收站还原账号（保留原账号 ID 与分组关系）
+ */
+export async function restoreAccountFromRecycleBin(binId: number): Promise<{ account_id: number }> {
+  const { data } = await apiClient.post<{ account_id: number }>(`/admin/accounts/recycle-bin/${binId}/restore`)
+  return data
+}
+
+/**
+ * 永久删除回收站条目
+ */
+export async function purgeAccountRecycleBinEntry(binId: number): Promise<{ message: string }> {
+  const { data } = await apiClient.delete<{ message: string }>(`/admin/accounts/recycle-bin/${binId}`)
+  return data
+}
+
 /**
  * Toggle account status
  * @param id - Account ID
@@ -1083,6 +1122,9 @@ export const accountsAPI = {
   updateGrokMediaEligibility,
   checkMixedChannelRisk,
   delete: deleteAccount,
+  listRecycleBin: listAccountRecycleBin,
+  restoreFromRecycleBin: restoreAccountFromRecycleBin,
+  purgeRecycleBinEntry: purgeAccountRecycleBinEntry,
   toggleStatus,
   testAccount,
   refreshCredentials,
