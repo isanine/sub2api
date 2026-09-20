@@ -1020,23 +1020,39 @@ func (r *accountRepository) RestoreAccountFromRecycleBin(ctx context.Context, bi
 	}(); err != nil {
 		return nil, translatePersistenceError(err, service.ErrAccountNotFound, nil)
 	}
-	// 原账号 ID 已被占用（不应发生：ID 序列不复用）时拒绝还原，避免冲突。
-	conflictRows, err := txClient.QueryContext(ctx, "SELECT 1 FROM accounts WHERE id = $1", accountID)
+	// 原账号行有三种状态：ent 软删除（deleted_at 非空）→ 直接恢复；彻底不存在 →
+	// 按快照整行重建；仍处于正常状态 → 冲突拒绝。
+	softRows, err := txClient.QueryContext(ctx, "SELECT deleted_at IS NOT NULL FROM accounts WHERE id = $1", accountID)
 	if err != nil {
 		return nil, err
 	}
-	conflict := func() bool {
-		defer func() { _ = conflictRows.Close() }()
-		return conflictRows.Next()
+	state, hasRow := func() (bool, bool) {
+		defer func() { _ = softRows.Close() }()
+		if !softRows.Next() {
+			return false, false
+		}
+		var softDeleted bool
+		if err := softRows.Scan(&softDeleted); err != nil {
+			return false, false
+		}
+		return softDeleted, true
 	}()
-	if conflict {
+	switch {
+	case !hasRow:
+		// 按快照整行重建（保留原 ID / 时间戳 / 凭证 / extra）。
+		if _, err := txClient.ExecContext(ctx,
+			"INSERT INTO accounts SELECT * FROM jsonb_populate_record(NULL::accounts, $1::jsonb)", snapshot); err != nil {
+			return nil, err
+		}
+	case state:
+		// 软删除恢复：清掉 deleted_at 即可，行与凭证本就原样保留。
+		if _, err := txClient.ExecContext(ctx,
+			"UPDATE accounts SET deleted_at = NULL, updated_at = now() WHERE id = $1", accountID); err != nil {
+			return nil, err
+		}
+	default:
 		return nil, infraerrors.Conflict("ACCOUNT_ID_CONFLICT",
 			fmt.Sprintf("account %d already exists; purge the recycle bin entry instead", accountID))
-	}
-	// 按快照整行重建（保留原 ID / 时间戳 / 凭证 / extra）。
-	if _, err := txClient.ExecContext(ctx,
-		"INSERT INTO accounts SELECT * FROM jsonb_populate_record(NULL::accounts, $1::jsonb)", snapshot); err != nil {
-		return nil, err
 	}
 	// 恢复分组关系（分组本身已删除的跳过）。
 	if _, err := txClient.ExecContext(ctx, `
