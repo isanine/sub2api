@@ -14,8 +14,9 @@ type AccountRecycleBinEntry struct {
 	Type           string    `json:"type"`
 	GroupIDs       []int64   `json:"group_ids"`
 	DeletedBy      int64     `json:"deleted_by"`
-	DeletedByEmail string    `json:"deleted_by_email"`
-	DeletedAt      time.Time `json:"deleted_at"`
+	DeletedByEmail   string     `json:"deleted_by_email"`
+	DeletedAt        time.Time  `json:"deleted_at"`
+	AccountExpiresAt *time.Time `json:"account_expires_at"` // 账号订阅到期时间（删除时快照；nil = 永久）
 }
 
 // accountRecycleOperatorContextKey 携带删除操作人（管理端用户），由 handler 注入、

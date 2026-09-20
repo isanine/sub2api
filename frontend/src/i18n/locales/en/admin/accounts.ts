@@ -596,6 +596,8 @@ export default {
       platform: 'Platform',
       type: 'Type',
       deletedAt: 'Deleted At',
+      accountExpiresAt: 'Subscription Expiry',
+      neverExpires: 'Never',
       deletedBy: 'Deleted By',
       actions: 'Actions',
       restore: 'Restore',

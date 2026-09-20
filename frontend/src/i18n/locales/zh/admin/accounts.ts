@@ -683,6 +683,8 @@ export default {
       platform: '平台',
       type: '类型',
       deletedAt: '删除时间',
+      accountExpiresAt: '订阅到期时间',
+      neverExpires: '永久',
       deletedBy: '操作人',
       actions: '操作',
       restore: '还原',

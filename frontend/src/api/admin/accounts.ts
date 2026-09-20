@@ -289,6 +289,7 @@ export interface AccountRecycleBinEntry {
   deleted_by: number
   deleted_by_email: string
   deleted_at: string
+  account_expires_at?: string | null
 }
 
 /**

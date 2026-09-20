@@ -76,6 +76,9 @@ type AccountRepository interface {
 	// DemoteCodexTicketPriority 因连续未捕获门票一次性降级账号优先级（+1）。
 	// 返回是否执行了降级；已降过级返回 false。
 	DemoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error)
+	// PromoteCodexTicketPriority 捕获到门票后一次性升级账号优先级（-1，最低到 1）。
+	// 返回是否执行了升级；已升过级或已在最高级返回 false。
+	PromoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error)
 
 	List(ctx context.Context, params pagination.PaginationParams) ([]Account, *pagination.PaginationResult, error)
 	ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, *pagination.PaginationResult, error)

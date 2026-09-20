@@ -955,7 +955,8 @@ func (r *accountRepository) ListAccountRecycleBin(ctx context.Context, limit int
 		limit = 200
 	}
 	rows, err := r.client.QueryContext(ctx, `
-		SELECT id, account_id, platform, name, type, group_rows, deleted_by, deleted_by_email, deleted_at
+		SELECT id, account_id, platform, name, type, group_rows, deleted_by, deleted_by_email, deleted_at,
+		       (snapshot ->> 'expires_at')::timestamptz AS account_expires_at
 		FROM accounts_recycle_bin
 		ORDER BY deleted_at DESC
 		LIMIT $1`, limit)
@@ -968,7 +969,7 @@ func (r *accountRepository) ListAccountRecycleBin(ctx context.Context, limit int
 		var entry service.AccountRecycleBinEntry
 		var groupRows []byte
 		if err := rows.Scan(&entry.ID, &entry.AccountID, &entry.Platform, &entry.Name, &entry.Type,
-			&groupRows, &entry.DeletedBy, &entry.DeletedByEmail, &entry.DeletedAt); err != nil {
+			&groupRows, &entry.DeletedBy, &entry.DeletedByEmail, &entry.DeletedAt, &entry.AccountExpiresAt); err != nil {
 			return nil, err
 		}
 		entry.GroupIDs = parseInt64JSONArray(groupRows)
@@ -1110,6 +1111,40 @@ func (r *accountRepository) DemoteCodexTicketPriority(ctx context.Context, accou
 	if err == nil {
 		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &accountID, nil, buildSchedulerGroupPayload(groupIDs)); err != nil {
 			logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue ticket demote failed: account=%d err=%v", accountID, err)
+		}
+	}
+	return true, nil
+}
+
+// PromoteCodexTicketPriority 账号捕获到门票后一次性升级：优先级 -1（不低于 1，
+// 1 为最高级）并打 codex_ticket_priority_promoted 标记（只升一次）。
+// 已升过级或已在最高级时不动，返回是否本次执行了升级。
+func (r *accountRepository) PromoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error) {
+	ret, err := r.client.ExecContext(ctx, `
+		UPDATE accounts
+		SET priority = GREATEST(priority - 1, 1),
+		    updated_at = now(),
+		    extra = jsonb_set(COALESCE(extra, '{}'::jsonb), '{codex_ticket_priority_promoted}', 'true'::jsonb, true)
+		WHERE id = $1
+		  AND deleted_at IS NULL
+		  AND priority > 1
+		  AND COALESCE(extra ->> 'codex_ticket_priority_promoted', 'false') <> 'true'`,
+		accountID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := ret.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if affected == 0 {
+		return false, nil
+	}
+	// 调度器感知优先级变化（尽力而为）。
+	groupIDs, err := r.loadAccountGroupIDs(ctx, accountID)
+	if err == nil {
+		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &accountID, nil, buildSchedulerGroupPayload(groupIDs)); err != nil {
+			logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue ticket promote failed: account=%d err=%v", accountID, err)
 		}
 	}
 	return true, nil

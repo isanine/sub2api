@@ -457,3 +457,7 @@ func (m *sessionWindowMockRepo) PurgeAccountRecycleBinEntry(ctx context.Context,
 func (m *sessionWindowMockRepo) DemoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error) {
 	return false, nil
 }
+
+func (m *sessionWindowMockRepo) PromoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error) {
+	return false, nil
+}

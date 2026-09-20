@@ -430,3 +430,50 @@ func TestCaptureOpenAICodexTicket_NoDemoteWhileOtherModelHasTicket(t *testing.T)
 	svc.captureOpenAICodexTicketFromResponse(account, "gpt-5.6-sol", missResponse())
 	require.Empty(t, repo.demoted)
 }
+
+// ————— 捕获门票 → 一次性自动升级 —————
+
+type promoteRecorderRepo struct {
+	AccountRepository
+	promoted []int64
+}
+
+func (r *promoteRecorderRepo) PromoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error) {
+	r.promoted = append(r.promoted, accountID)
+	return true, nil
+}
+
+func (r *promoteRecorderRepo) UpdateExtra(ctx context.Context, accountID int64, extra map[string]any) error {
+	return nil
+}
+
+func TestCaptureOpenAICodexTicket_PromotesOncePerAccount(t *testing.T) {
+	svc := ticketTestService(t, config.OpenAICodexTicketConfig{
+		Enabled: true, TargetLength: 292, TTLSeconds: 3600, Models: []string{"gpt-6-astra"},
+	})
+	repo := &promoteRecorderRepo{}
+	svc.accountRepo = repo
+
+	// 优先级 2 的账号首次捕获 → 触发升级。
+	account := ticketTestAccount(41)
+	account.Priority = 2
+	svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", captureResponseHeader(292))
+	require.Equal(t, []int64{41}, repo.promoted)
+
+	// 再次捕获（续票）：进程内标记已升过，不再触发。
+	svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", captureResponseHeader(292))
+	require.Len(t, repo.promoted, 1)
+
+	// 已升过级的账号（extra 标记）不触发。
+	marked := ticketTestAccount(42)
+	marked.Priority = 3
+	marked.Extra = map[string]any{"codex_ticket_priority_promoted": true}
+	svc.captureOpenAICodexTicketFromResponse(marked, "gpt-6-astra", captureResponseHeader(292))
+	require.Len(t, repo.promoted, 1)
+
+	// 已在最高级（priority <= 1）不触发。
+	top := ticketTestAccount(43)
+	top.Priority = 1
+	svc.captureOpenAICodexTicketFromResponse(top, "gpt-6-astra", captureResponseHeader(292))
+	require.Len(t, repo.promoted, 1)
+}

@@ -27,6 +27,7 @@
                 <th class="px-3 py-2">{{ t('admin.accounts.recycleBin.platform') }}</th>
                 <th class="px-3 py-2">{{ t('admin.accounts.recycleBin.type') }}</th>
                 <th class="px-3 py-2">{{ t('admin.accounts.recycleBin.deletedAt') }}</th>
+                <th class="px-3 py-2">{{ t('admin.accounts.recycleBin.accountExpiresAt') }}</th>
                 <th class="px-3 py-2">{{ t('admin.accounts.recycleBin.deletedBy') }}</th>
                 <th class="px-3 py-2 text-right">{{ t('admin.accounts.recycleBin.actions') }}</th>
               </tr>
@@ -40,6 +41,9 @@
                 <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ entry.platform }}</td>
                 <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ entry.type }}</td>
                 <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">{{ formatTime(entry.deleted_at) }}</td>
+                <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+                  {{ entry.account_expires_at ? formatTime(entry.account_expires_at) : t('admin.accounts.recycleBin.neverExpires') }}
+                </td>
                 <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">{{ entry.deleted_by_email || '-' }}</td>
                 <td class="px-3 py-2 text-right">
                   <div class="flex justify-end gap-2">

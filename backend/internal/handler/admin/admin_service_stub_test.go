@@ -850,3 +850,7 @@ func (s *stubAdminService) PurgeAccountRecycleBinEntry(ctx context.Context, binI
 func (s *stubAdminService) DemoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error) {
 	return false, nil
 }
+
+func (s *stubAdminService) PromoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error) {
+	return false, nil
+}

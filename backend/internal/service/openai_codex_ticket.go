@@ -364,6 +364,7 @@ func (s *OpenAIGatewayService) captureOpenAICodexTicketFromResponse(account *Acc
 		// 已有一张同 key 且更新的票（并发捕获）时保留新值即可；捕获本身低频。
 		s.storeOpenAICodexTicket(context.Background(), account, ticket)
 		s.resetOpenAICodexTicketMissCount(account.ID)
+		s.promoteOpenAICodexTicketPriority(account)
 		logger.L().Info("openai_codex_ticket captured",
 			zap.Int64("account_id", account.ID),
 			zap.String("model", model),
@@ -377,6 +378,38 @@ func (s *OpenAIGatewayService) captureOpenAICodexTicketFromResponse(account *Acc
 		return
 	}
 	s.noteOpenAICodexTicketMiss(account, cfg)
+}
+
+// promoteOpenAICodexTicketPriority 捕获到门票时一次性升级：优先级 -1（最低 1），
+// 已升过级（extra 标记）或已在最高级的账号不动。与自动降级对称，各只生效一次。
+func (s *OpenAIGatewayService) promoteOpenAICodexTicketPriority(account *Account) {
+	if s == nil || account == nil || account.ID <= 0 || s.accountRepo == nil {
+		return
+	}
+	// 进程内快照先挡掉绝大多数无效调用：已在最高级或已升过级。
+	if account.Priority <= 1 {
+		return
+	}
+	if promoted, ok := account.Extra["codex_ticket_priority_promoted"].(bool); ok && promoted {
+		return
+	}
+	promoted, err := s.accountRepo.PromoteCodexTicketPriority(context.Background(), account.ID)
+	if err != nil {
+		logger.L().Warn("openai_codex_ticket promote failed",
+			zap.Int64("account_id", account.ID), zap.Error(err))
+		return
+	}
+	if promoted {
+		// 同步进程内标记：本账号对象的后续捕获（续票）不再重复触发升级。
+		if account.Extra == nil {
+			account.Extra = map[string]any{}
+		}
+		account.Extra["codex_ticket_priority_promoted"] = true
+		logger.L().Info("openai_codex_ticket priority promoted",
+			zap.Int64("account_id", account.ID),
+			zap.String("reason", "ticket captured"),
+		)
+	}
 }
 
 func (s *OpenAIGatewayService) resetOpenAICodexTicketMissCount(accountID int64) {
