@@ -332,6 +332,97 @@ func (s *SettingService) InvalidateOpenAICodexTicketEnabledCache() {
 	s.openAICodexTicketEnabledCache.Store(&cachedOpenAICodexTicketEnabled{expiresAt: 0})
 }
 
+type cachedOpenAICodexTicketScopeEnabled struct {
+	value     bool
+	expiresAt int64
+}
+
+const openAICodexTicketScopeCacheTTL = 5 * time.Second
+
+// GetOpenAICodexTicketPersonalEnabled 返回个人号打票细分开关；总开关开启时，
+// 个人号（free/plus/pro）是否参与打票与门控。键缺失视为 true（兼容历史行为）。
+func (s *SettingService) GetOpenAICodexTicketPersonalEnabled(ctx context.Context, fallback bool) bool {
+	return s.getOpenAICodexTicketScopeEnabled(ctx, SettingKeyOpenAICodexTicketPersonalEnabled,
+		&s.openAICodexTicketPersonalCache, &s.openAICodexTicketPersonalSF, fallback)
+}
+
+// GetOpenAICodexTicketTeamEnabled 返回 Team/Business 号打票细分开关；总开关开启时，
+// Team/Business workspace 账号是否参与打票与门控。键缺失视为 true（兼容历史行为）。
+func (s *SettingService) GetOpenAICodexTicketTeamEnabled(ctx context.Context, fallback bool) bool {
+	return s.getOpenAICodexTicketScopeEnabled(ctx, SettingKeyOpenAICodexTicketTeamEnabled,
+		&s.openAICodexTicketTeamCache, &s.openAICodexTicketTeamSF, fallback)
+}
+
+func (s *SettingService) getOpenAICodexTicketScopeEnabled(ctx context.Context, key string, cache *atomic.Value, sf *singleflight.Group, fallback bool) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return fallback
+	}
+	if s == nil || s.settingRepo == nil {
+		return fallback
+	}
+	if cached, ok := cache.Load().(*cachedOpenAICodexTicketScopeEnabled); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.value
+		}
+	}
+	resultCh := sf.DoChan(key, func() (any, error) {
+		if cached, ok := cache.Load().(*cachedOpenAICodexTicketScopeEnabled); ok && cached != nil {
+			if time.Now().UnixNano() < cached.expiresAt {
+				return cached.value, nil
+			}
+		}
+		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		value, err := s.settingRepo.GetValue(dbCtx, key)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if err != nil && !errors.Is(err, ErrSettingNotFound) {
+			if cached, ok := cache.Load().(*cachedOpenAICodexTicketScopeEnabled); ok && cached != nil {
+				return cached.value, nil
+			}
+			return fallback, nil
+		}
+		enabled := fallback
+		if err == nil && strings.TrimSpace(value) != "" {
+			enabled = value == "true"
+		}
+		cache.Store(&cachedOpenAICodexTicketScopeEnabled{
+			value:     enabled,
+			expiresAt: time.Now().Add(openAICodexTicketScopeCacheTTL).UnixNano(),
+		})
+		return enabled, nil
+	})
+	select {
+	case <-ctx.Done():
+		return fallback
+	case result := <-resultCh:
+		if v, ok := result.Val.(bool); ok && result.Err == nil {
+			return v
+		}
+		return fallback
+	}
+}
+
+func (s *SettingService) InvalidateOpenAICodexTicketPersonalCache() {
+	if s == nil {
+		return
+	}
+	s.openAICodexTicketPersonalSF.Forget(SettingKeyOpenAICodexTicketPersonalEnabled)
+	s.openAICodexTicketPersonalCache.Store(&cachedOpenAICodexTicketScopeEnabled{expiresAt: 0})
+}
+
+func (s *SettingService) InvalidateOpenAICodexTicketTeamCache() {
+	if s == nil {
+		return
+	}
+	s.openAICodexTicketTeamSF.Forget(SettingKeyOpenAICodexTicketTeamEnabled)
+	s.openAICodexTicketTeamCache.Store(&cachedOpenAICodexTicketScopeEnabled{expiresAt: 0})
+}
+
 type cachedOpenAICodexTicketHarvestProxy struct {
 	value     string
 	expiresAt int64
