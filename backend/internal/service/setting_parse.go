@@ -919,6 +919,16 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 			}
 			return false, true
 		})
+	// 降级阈值：后台非空合法值优先；缺失回退 yaml（默认 100）。
+	result.OpenAICodexTicketDemoteThreshold = 100
+	if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAICodexTicket.PriorityDemoteThreshold > 0 {
+		result.OpenAICodexTicketDemoteThreshold = s.cfg.Gateway.OpenAICodexTicket.PriorityDemoteThreshold
+	}
+	if v, ok := settings[SettingKeyOpenAICodexTicketDemoteThreshold]; ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n >= 0 {
+			result.OpenAICodexTicketDemoteThreshold = n
+		}
+	}
 	// codex_cli_only 加固
 	result.MinCodexVersion = settings[SettingKeyMinCodexVersion]
 	result.MaxCodexVersion = settings[SettingKeyMaxCodexVersion]

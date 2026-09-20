@@ -4548,6 +4548,23 @@
                       v-model="form.openai_codex_ticket_team_enabled"
                     />
                   </div>
+                  <div>
+                    <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+                      {{ t("admin.settings.gatewayForwarding.codexTicketDemoteThreshold") }}
+                    </h4>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.gatewayForwarding.codexTicketDemoteThresholdDesc") }}
+                    </p>
+                    <input
+                      id="codex-ticket-demote-threshold"
+                      v-model.number="form.openai_codex_ticket_demote_threshold"
+                      type="number"
+                      min="0"
+                      max="1000000"
+                      step="1"
+                      class="input mt-2 w-40"
+                    />
+                  </div>
                 </div>
                 <div>
                   <h3 class="text-base font-semibold text-gray-900 dark:text-white">
@@ -9891,6 +9908,7 @@ const form = reactive<SettingsForm>({
   openai_codex_ticket_enabled: false,
   openai_codex_ticket_personal_enabled: true,
   openai_codex_ticket_team_enabled: true,
+  openai_codex_ticket_demote_threshold: 100,
   // codex_cli_only 加固
   min_codex_version: "",
   max_codex_version: "",
@@ -11500,6 +11518,7 @@ async function saveSettings() {
       openai_codex_ticket_enabled: form.openai_codex_ticket_enabled,
       openai_codex_ticket_personal_enabled: form.openai_codex_ticket_personal_enabled,
       openai_codex_ticket_team_enabled: form.openai_codex_ticket_team_enabled,
+      openai_codex_ticket_demote_threshold: Number(form.openai_codex_ticket_demote_threshold) || 0,
       min_codex_version: form.min_codex_version?.trim() || "",
       max_codex_version: form.max_codex_version?.trim() || "",
       codex_cli_only_allow_app_server_clients:

@@ -125,3 +125,38 @@ func TestCaptureOpenAICodexTicketRuntimeSettingGate(t *testing.T) {
 	svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", header)
 	require.True(t, svc.lookupOpenAICodexTicket(account, "gpt-6-astra").valid(time.Now(), 292))
 }
+
+func TestCodexTicketDemoteThresholdRuntimeOverride(t *testing.T) {
+	repo := &codexTicketSettingRepo{codexPolicyMigrationRepoStub: &codexPolicyMigrationRepoStub{values: map[string]string{}}}
+	settings := NewSettingService(repo, &config.Config{})
+	// yaml 未配置时回退 100；后台覆盖为 5；非法值回退；0 表示关闭。
+	require.Equal(t, 100, settings.GetOpenAICodexTicketDemoteThreshold(t.Context(), 100))
+	repo.values[SettingKeyOpenAICodexTicketDemoteThreshold] = "5"
+	settings.InvalidateOpenAICodexTicketDemoteThresholdCache()
+	require.Equal(t, 5, settings.GetOpenAICodexTicketDemoteThreshold(t.Context(), 100))
+	repo.values[SettingKeyOpenAICodexTicketDemoteThreshold] = "abc"
+	settings.InvalidateOpenAICodexTicketDemoteThresholdCache()
+	require.Equal(t, 100, settings.GetOpenAICodexTicketDemoteThreshold(t.Context(), 100))
+	repo.values[SettingKeyOpenAICodexTicketDemoteThreshold] = "0"
+	settings.InvalidateOpenAICodexTicketDemoteThresholdCache()
+	require.Equal(t, 0, settings.GetOpenAICodexTicketDemoteThreshold(t.Context(), 100))
+
+	// 网关按运行时阈值触发降级：阈值改为 3 后第 3 次 miss 即降级。
+	cfg := config.OpenAICodexTicketConfig{
+		Enabled: true, TargetLength: 292, TTLSeconds: 3600,
+		Models: []string{"gpt-6-astra"}, PriorityDemoteThreshold: 100,
+	}
+	svc := ticketTestService(t, cfg)
+	svc.settingService = settings
+	svc.accountRepo = &demoteRecorderRepo{}
+	account := ticketTestAccount(41)
+	repo.values[SettingKeyOpenAICodexTicketDemoteThreshold] = "3"
+	settings.InvalidateOpenAICodexTicketDemoteThresholdCache()
+	for i := 0; i < 2; i++ {
+		svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", missResponse())
+	}
+	demoted := svc.accountRepo.(*demoteRecorderRepo)
+	require.Empty(t, demoted.demoted)
+	svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", missResponse())
+	require.Equal(t, []int64{41}, demoted.demoted)
+}

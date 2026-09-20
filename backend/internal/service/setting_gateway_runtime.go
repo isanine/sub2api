@@ -423,6 +423,70 @@ func (s *SettingService) InvalidateOpenAICodexTicketTeamCache() {
 	s.openAICodexTicketTeamCache.Store(&cachedOpenAICodexTicketScopeEnabled{expiresAt: 0})
 }
 
+type cachedOpenAICodexTicketDemoteThreshold struct {
+	value     int
+	expiresAt int64
+}
+
+const openAICodexTicketDemoteThresholdCacheTTL = 5 * time.Second
+
+// GetOpenAICodexTicketDemoteThreshold 返回连续未捕获门票自动降级阈值。
+// 设置键存在且非空时以后台为准；缺失或非法则回退 yaml/env（调用方传入）。
+func (s *SettingService) GetOpenAICodexTicketDemoteThreshold(ctx context.Context, fallback int) int {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return fallback
+	}
+	if s == nil || s.settingRepo == nil {
+		return fallback
+	}
+	if cached, ok := s.openAICodexTicketDemoteThresholdCache.Load().(*cachedOpenAICodexTicketDemoteThreshold); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.value
+		}
+	}
+	resultCh := s.openAICodexTicketDemoteThresholdSF.DoChan(SettingKeyOpenAICodexTicketDemoteThreshold, func() (any, error) {
+		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		value, err := s.settingRepo.GetValue(dbCtx, SettingKeyOpenAICodexTicketDemoteThreshold)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		resolved := fallback
+		if err == nil && strings.TrimSpace(value) != "" {
+			if n, perr := strconv.Atoi(strings.TrimSpace(value)); perr == nil && n >= 0 {
+				resolved = n
+			}
+		} else if err != nil && !errors.Is(err, ErrSettingNotFound) {
+			return fallback, nil
+		}
+		s.openAICodexTicketDemoteThresholdCache.Store(&cachedOpenAICodexTicketDemoteThreshold{
+			value:     resolved,
+			expiresAt: time.Now().Add(openAICodexTicketDemoteThresholdCacheTTL).UnixNano(),
+		})
+		return resolved, nil
+	})
+	select {
+	case <-ctx.Done():
+		return fallback
+	case result := <-resultCh:
+		if v, ok := result.Val.(int); ok && result.Err == nil {
+			return v
+		}
+		return fallback
+	}
+}
+
+func (s *SettingService) InvalidateOpenAICodexTicketDemoteThresholdCache() {
+	if s == nil {
+		return
+	}
+	s.openAICodexTicketDemoteThresholdSF.Forget(SettingKeyOpenAICodexTicketDemoteThreshold)
+	s.openAICodexTicketDemoteThresholdCache.Store(&cachedOpenAICodexTicketDemoteThreshold{expiresAt: 0})
+}
+
 // GetOpenAICodexUserAgent 返回 OpenAI Codex 上游请求使用的 User-Agent。
 // 后台设置优先；为空时回退到内置默认值。
 func (s *SettingService) GetOpenAICodexUserAgent(ctx context.Context) string {

@@ -545,6 +545,9 @@ export default {
         codexTicketTeamEnabled: 'Team/Business 号启用',
         codexTicketTeamEnabledDesc:
           '总开关开启时，Team/Business workspace 账号是否参与捕获与注入。关闭后 Team 号按原链路转发。',
+        codexTicketDemoteThreshold: '自动降级阈值',
+        codexTicketDemoteThresholdDesc:
+          '连续未捕获门票达到该次数、且所有门控模型都无有效票时，账号优先级 +1（调度靠后，只降一次）。捕获成功计数清零；0 表示关闭自动降级。默认 100。',
         codexClientRestrictionTitle: 'Codex 客户端限制',
         codexHardeningDesc:
           '仅对已开启「仅允许 Codex 官方客户端」的 OpenAI OAuth 账号生效（全局）。在 User-Agent/Originator 之外，用版本区间、引擎指纹门与黑/白名单巩固判定。',

@@ -488,6 +488,10 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyOpenAICodexTicketEnabled] = strconv.FormatBool(settings.OpenAICodexTicketEnabled)
 	updates[SettingKeyOpenAICodexTicketPersonalEnabled] = strconv.FormatBool(settings.OpenAICodexTicketPersonalEnabled)
 	updates[SettingKeyOpenAICodexTicketTeamEnabled] = strconv.FormatBool(settings.OpenAICodexTicketTeamEnabled)
+	if settings.OpenAICodexTicketDemoteThreshold < 0 || settings.OpenAICodexTicketDemoteThreshold > 1000000 {
+		return nil, infraerrors.BadRequest("INVALID_CODEX_TICKET_DEMOTE_THRESHOLD", "priority demote threshold must be between 0 and 1000000 (0 disables)")
+	}
+	updates[SettingKeyOpenAICodexTicketDemoteThreshold] = strconv.Itoa(settings.OpenAICodexTicketDemoteThreshold)
 	// SettingKeyOpenAICodexClientVersionSynced 由自动同步任务独占写入，此处不得覆盖，
 	// 否则面板保存会把同步结果清空。
 	// codex_cli_only 加固
@@ -745,6 +749,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	s.InvalidateOpenAICodexTicketEnabledCache()
 	s.InvalidateOpenAICodexTicketPersonalCache()
 	s.InvalidateOpenAICodexTicketTeamCache()
+	s.InvalidateOpenAICodexTicketDemoteThresholdCache()
 	openAIAdvancedSchedulerSettingSF.Forget(openAIAdvancedSchedulerSettingKey)
 	openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
 		lowUpstreamRatePriorityEnabled: settings.OpenAILowUpstreamRatePriorityEnabled,

@@ -253,6 +253,7 @@ type SystemSettings struct {
 	OpenAICodexTicketEnabled               bool   // Codex 292/332 打票总开关；关闭则不打票不注入
 	OpenAICodexTicketPersonalEnabled       bool   // 个人号打票细分开关；总开关开启时个人号是否参与（默认 true）
 	OpenAICodexTicketTeamEnabled           bool   // Team/Business 号打票细分开关；总开关开启时 Team 号是否参与（默认 true）
+	OpenAICodexTicketDemoteThreshold       int    // 连续未捕获门票自动降级阈值；0 = 关闭，默认 100
 	MinCodexVersion                        string // codex_cli_only 最低 Codex 引擎版本；空=不检查
 	MaxCodexVersion                        string // codex_cli_only 最高 Codex 引擎版本；空=不检查
 	CodexCLIOnlyBlacklist                  string // codex_cli_only 全局黑名单 JSON（[]AllowedClientEntry，OR deny）

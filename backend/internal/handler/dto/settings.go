@@ -220,6 +220,7 @@ type SystemSettings struct {
 	OpenAICodexTicketEnabled                bool   `json:"openai_codex_ticket_enabled"`
 	OpenAICodexTicketPersonalEnabled        bool   `json:"openai_codex_ticket_personal_enabled"`
 	OpenAICodexTicketTeamEnabled            bool   `json:"openai_codex_ticket_team_enabled"`
+	OpenAICodexTicketDemoteThreshold        int    `json:"openai_codex_ticket_demote_threshold"`
 
 	// codex_cli_only 加固
 	MinCodexVersion                      string `json:"min_codex_version"`

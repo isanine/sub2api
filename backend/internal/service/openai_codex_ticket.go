@@ -179,6 +179,20 @@ func (s *OpenAIGatewayService) openAICodexTicketScopeEnabledContext(ctx context.
 	return fallback
 }
 
+// openAICodexTicketDemoteThreshold 返回自动降级阈值：后台设置（热更新）优先，
+// 缺失或非法回退 yaml priority_demote_threshold（viper 默认 100）。0 = 关闭。
+// 注意 yaml 显式 0 是合法的「关闭」语义，不得回退成默认值。
+func (s *OpenAIGatewayService) openAICodexTicketDemoteThreshold() int {
+	fallback := 100
+	if s != nil && s.cfg != nil {
+		fallback = s.cfg.Gateway.OpenAICodexTicket.PriorityDemoteThreshold
+	}
+	if s == nil || s.settingService == nil {
+		return fallback
+	}
+	return s.settingService.GetOpenAICodexTicketDemoteThreshold(context.Background(), fallback)
+}
+
 func (t *openAICodexTicket) valid(now time.Time, targetLen int) bool {
 	if t == nil {
 		return false
@@ -376,7 +390,7 @@ func (s *OpenAIGatewayService) noteOpenAICodexTicketMiss(account *Account, cfg c
 	if s == nil || account == nil || account.ID <= 0 {
 		return
 	}
-	threshold := cfg.PriorityDemoteThreshold
+	threshold := s.openAICodexTicketDemoteThreshold()
 	if threshold <= 0 {
 		return // 自动降级关闭
 	}

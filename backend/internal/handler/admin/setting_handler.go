@@ -306,6 +306,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		OpenAICodexTicketEnabled:                               settings.OpenAICodexTicketEnabled,
 		OpenAICodexTicketPersonalEnabled:                       settings.OpenAICodexTicketPersonalEnabled,
 		OpenAICodexTicketTeamEnabled:                           settings.OpenAICodexTicketTeamEnabled,
+		OpenAICodexTicketDemoteThreshold:                       settings.OpenAICodexTicketDemoteThreshold,
 		MinCodexVersion:                                        settings.MinCodexVersion,
 		MaxCodexVersion:                                        settings.MaxCodexVersion,
 		CodexCLIOnlyBlacklist:                                  settings.CodexCLIOnlyBlacklist,

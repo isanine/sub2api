@@ -717,6 +717,9 @@ const (
 	// SettingKeyOpenAICodexTicketTeamEnabled Team/Business 号打票细分开关；总开关开启时，
 	// Team/Business workspace 账号是否参与打票与门控。缺失视为 true（兼容历史行为）。
 	SettingKeyOpenAICodexTicketTeamEnabled = "openai_codex_ticket_team_enabled"
+	// SettingKeyOpenAICodexTicketDemoteThreshold 连续未捕获门票自动降级的阈值
+	//（次数，0 = 关闭自动降级）。缺失时回退 yaml priority_demote_threshold。
+	SettingKeyOpenAICodexTicketDemoteThreshold = "openai_codex_ticket_demote_threshold"
 	// SettingKeyOpenAIAllowClaudeCodeCodexPlugin 已废弃：历史全局开关只作为升级迁移输入读取。
 	// 迁移后等价规则写入 SettingKeyCodexCLIOnlyWhitelist，不再参与运行时判定。
 	SettingKeyOpenAIAllowClaudeCodeCodexPlugin = "openai_allow_claude_code_codex_plugin"

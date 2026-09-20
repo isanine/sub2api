@@ -491,6 +491,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.OpenAICodexTicketTeamEnabled != after.OpenAICodexTicketTeamEnabled {
 		changed = append(changed, "openai_codex_ticket_team_enabled")
 	}
+	if before.OpenAICodexTicketDemoteThreshold != after.OpenAICodexTicketDemoteThreshold {
+		changed = append(changed, "openai_codex_ticket_demote_threshold")
+	}
 	if before.OpenAICodexUserAgent != after.OpenAICodexUserAgent {
 		changed = append(changed, "openai_codex_user_agent")
 	}
