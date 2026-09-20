@@ -327,6 +327,12 @@ gateway:
   # Credential shadow accounts retain their existing forwarding policy and are not ticket-gated.
   openai_codex_ticket:
     enabled: false
+    # 细分范围：总开关开启后，个人号 / Team 号可独立启停（后台「系统设置 → 网关 →
+    # Codex 设置」可热更覆盖）。默认都开启，与历史行为兼容。
+    # Env: GATEWAY_OPENAI_CODEX_TICKET_ENABLED_PERSONAL=false
+    #      GATEWAY_OPENAI_CODEX_TICKET_ENABLED_TEAM=false
+    enabled_personal: true
+    enabled_team: true
     # 个人号的门票合格长度；Team/Business 账号固定按 332 校验，与此值无关。
     target_length: 292
     ttl_seconds: 3600

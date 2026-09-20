@@ -1234,6 +1234,20 @@ type OpenAICodexTicketConfig struct {
 	HarvestAttemptTimeoutSeconds int      `mapstructure:"harvest_attempt_timeout_seconds"`
 	FailClosed                   bool     `mapstructure:"fail_closed"`
 	Models                       []string `mapstructure:"models"`
+	// EnabledPersonal / EnabledTeam 细分打票范围：总开关 enabled 开启后，
+	// 个人号 / Team 号可独立启停。nil = 跟随总开关（默认开启），与历史行为兼容。
+	EnabledPersonal *bool `mapstructure:"enabled_personal"`
+	EnabledTeam     *bool `mapstructure:"enabled_team"`
+}
+
+// PersonalEnabled 返回个人号打票是否生效（nil 视为开启）。
+func (c OpenAICodexTicketConfig) PersonalEnabled() bool {
+	return c.EnabledPersonal == nil || *c.EnabledPersonal
+}
+
+// TeamEnabled 返回 Team/Business 号打票是否生效（nil 视为开启）。
+func (c OpenAICodexTicketConfig) TeamEnabled() bool {
+	return c.EnabledTeam == nil || *c.EnabledTeam
 }
 
 // DefaultOpenAIWSClientFirstMessageTimeoutSeconds preserves the legacy ingress deadline.
@@ -2400,6 +2414,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
 	viper.SetDefault("gateway.openai_compact_model", "gpt-5.5")
 	viper.SetDefault("gateway.openai_codex_ticket.enabled", false)
+	viper.SetDefault("gateway.openai_codex_ticket.enabled_personal", true)
+	viper.SetDefault("gateway.openai_codex_ticket.enabled_team", true)
 	viper.SetDefault("gateway.openai_codex_ticket.target_length", 292)
 	viper.SetDefault("gateway.openai_codex_ticket.ttl_seconds", 3600)
 	viper.SetDefault("gateway.openai_codex_ticket.refresh_before_seconds", 600)

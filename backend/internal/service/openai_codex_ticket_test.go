@@ -598,3 +598,125 @@ func TestCodexTicketHarvest_TeamAccountAccepts332(t *testing.T) {
 	svc3.probeOnceOpenAICodexTicket(context.Background(), personal, "gpt-6-astra")
 	require.Nil(t, svc3.lookupOpenAICodexTicket(personal, "gpt-6-astra"))
 }
+
+// ————— 个人 / Team 细分开关 —————
+
+func boolPtrForTest(v bool) *bool { return &v }
+
+func TestOpenAICodexTicketScopeSwitch_GatesPerAccountType(t *testing.T) {
+	cfg := config.OpenAICodexTicketConfig{
+		Enabled:      true,
+		TargetLength: 292,
+		TTLSeconds:   3600,
+		FailClosed:   true,
+	}
+	personal := ticketTestAccount(71) // 无 plan_type → 个人
+	team := ticketTestAccount(72)
+	team.Credentials["plan_type"] = "team"
+
+	store := func(svc *OpenAIGatewayService, a *Account, n int) {
+		svc.storeOpenAICodexTicket(context.Background(), a, &openAICodexTicket{
+			AccountID: a.ID, Model: "gpt-6-astra",
+			State: fakeCodexTicketState(n), Length: n,
+			CapturedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour),
+		})
+	}
+	applyTicket := func(svc *OpenAIGatewayService, a *Account) (http.Header, error) {
+		h := http.Header{}
+		h.Set(openAICodexTurnStateHeader, "client-state")
+		err := svc.applyOpenAICodexTicket(context.Background(), a, "gpt-6-astra", h)
+		return h, err
+	}
+
+	t.Run("nil 细分开关默认两类全开", func(t *testing.T) {
+		svc := ticketTestService(t, cfg, nil)
+		store(svc, personal, 292)
+		store(svc, team, 332)
+		h, err := applyTicket(svc, personal)
+		require.NoError(t, err)
+		require.Len(t, h.Get(openAICodexTurnStateHeader), 292)
+		h, err = applyTicket(svc, team)
+		require.NoError(t, err)
+		require.Len(t, h.Get(openAICodexTurnStateHeader), 332)
+	})
+
+	t.Run("关闭个人号只影响个人号", func(t *testing.T) {
+		c := cfg
+		c.EnabledPersonal = boolPtrForTest(false)
+		svc := ticketTestService(t, c, nil)
+		store(svc, personal, 292)
+		store(svc, team, 332)
+		// 个人号：不打票不拦截，客户端自带头原样透传。
+		h, err := applyTicket(svc, personal)
+		require.NoError(t, err)
+		require.Equal(t, "client-state", h.Get(openAICodexTurnStateHeader))
+		require.False(t, svc.openAICodexTicketBlocksAccount(personal, "gpt-6-astra"))
+		// Team 号照常注入。
+		h, err = applyTicket(svc, team)
+		require.NoError(t, err)
+		require.Len(t, h.Get(openAICodexTurnStateHeader), 332)
+		require.False(t, svc.openAICodexTicketBlocksAccount(team, "gpt-6-astra"))
+	})
+
+	t.Run("关闭 Team 号只影响 Team 号", func(t *testing.T) {
+		c := cfg
+		c.EnabledTeam = boolPtrForTest(false)
+		svc := ticketTestService(t, c, nil)
+		store(svc, personal, 292)
+		store(svc, team, 332)
+		h, err := applyTicket(svc, personal)
+		require.NoError(t, err)
+		require.Len(t, h.Get(openAICodexTurnStateHeader), 292)
+		h, err = applyTicket(svc, team)
+		require.NoError(t, err)
+		require.Equal(t, "client-state", h.Get(openAICodexTurnStateHeader))
+		require.False(t, svc.openAICodexTicketBlocksAccount(team, "gpt-6-astra"))
+	})
+
+	t.Run("总开关关闭时细分开关无效", func(t *testing.T) {
+		c := cfg
+		c.Enabled = false
+		c.EnabledPersonal = boolPtrForTest(true)
+		c.EnabledTeam = boolPtrForTest(true)
+		svc := ticketTestService(t, c, nil)
+		store(svc, personal, 292)
+		h, err := applyTicket(svc, personal)
+		require.NoError(t, err)
+		require.Equal(t, "client-state", h.Get(openAICodexTurnStateHeader))
+	})
+
+	t.Run("采集只打开启范围的账号", func(t *testing.T) {
+		c := cfg
+		c.EnabledTeam = boolPtrForTest(false)
+		c.Models = []string{"gpt-6-astra"}
+		c.HarvestProxyURL = "http://proxy.example.com:8080"
+		var probed []int64
+		upstream := &codexTicketFuncUpstream{do: func(*http.Request) (*http.Response, error) {
+			return codexTicketResponse(), nil
+		}}
+		svc := ticketTestService(t, c, upstream)
+		teamProbe := ticketTestAccount(73)
+		teamProbe.Credentials["plan_type"] = "team"
+		teamProbe.Status = StatusActive
+		personalProbe := ticketTestAccount(74)
+		personalProbe.Status = StatusActive
+		svc.accountRepo = &probeRecordingRepo{accounts: []Account{*teamProbe, *personalProbe}, probed: &probed}
+		svc.refreshOpenAICodexTickets(context.Background())
+		require.Equal(t, []int64{74}, probed, "Team 号被细分开关跳过，只探个人号")
+	})
+}
+
+type probeRecordingRepo struct {
+	AccountRepository
+	accounts []Account
+	probed   *[]int64
+}
+
+func (r *probeRecordingRepo) ListByPlatform(ctx context.Context, _ string) ([]Account, error) {
+	return r.accounts, nil
+}
+
+func (r *probeRecordingRepo) UpdateExtra(ctx context.Context, id int64, _ map[string]any) error {
+	*r.probed = append(*r.probed, id)
+	return nil
+}

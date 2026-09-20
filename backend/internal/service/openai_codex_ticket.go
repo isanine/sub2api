@@ -119,6 +119,14 @@ func OpenAICodexTicketStatuses(account *Account, cfg config.OpenAICodexTicketCon
 	if !cfg.Enabled || !isOpenAICodexTicketAccount(account) {
 		return nil
 	}
+	// 细分开关：该账号所属范围（个人 / Team）未开启打票时不展示门票状态。
+	if isOpenAICodexTicketTeamAccount(account) {
+		if !cfg.TeamEnabled() {
+			return nil
+		}
+	} else if !cfg.PersonalEnabled() {
+		return nil
+	}
 	models := cfg.Models
 	if len(models) == 0 {
 		models = []string{openAICodexTicketDefaultModel, openAICodexTicketDefaultSolModel}
@@ -163,6 +171,31 @@ func (s *OpenAIGatewayService) openAICodexTicketEnabledContext(ctx context.Conte
 	fallback := s.cfg != nil && s.cfg.Gateway.OpenAICodexTicket.Enabled
 	if s.settingService != nil {
 		return s.settingService.GetOpenAICodexTicketEnabled(ctx, fallback)
+	}
+	return fallback
+}
+
+// openAICodexTicketScopeEnabledContext 判定打票是否对该账号生效：
+// 总开关开启后，个人号 / Team 号各自受独立细分开关控制（后台可热更），
+// 未配置细分开关时两类都默认开启（兼容历史行为）。
+func (s *OpenAIGatewayService) openAICodexTicketScopeEnabledContext(ctx context.Context, account *Account) bool {
+	if s == nil || !s.openAICodexTicketEnabledContext(ctx) {
+		return false
+	}
+	team := isOpenAICodexTicketTeamAccount(account)
+	fallback := true
+	if s.cfg != nil {
+		if team {
+			fallback = s.cfg.Gateway.OpenAICodexTicket.TeamEnabled()
+		} else {
+			fallback = s.cfg.Gateway.OpenAICodexTicket.PersonalEnabled()
+		}
+	}
+	if s.settingService != nil {
+		if team {
+			return s.settingService.GetOpenAICodexTicketTeamEnabled(ctx, fallback)
+		}
+		return s.settingService.GetOpenAICodexTicketPersonalEnabled(ctx, fallback)
 	}
 	return fallback
 }
@@ -322,7 +355,7 @@ func (s *OpenAIGatewayService) storeOpenAICodexTicket(ctx context.Context, accou
 // 请求路径只注入已捕获的有效门票，不现场打票；无票则返回
 // ErrOpenAICodexTicketUnavailable。打票由后台 harvester 完成。
 func (s *OpenAIGatewayService) applyOpenAICodexTicket(ctx context.Context, account *Account, model string, h http.Header) error {
-	if s == nil || h == nil || !isOpenAICodexTicketAccount(account) || !s.openAICodexTicketEnabledContext(ctx) {
+	if s == nil || h == nil || !isOpenAICodexTicketAccount(account) || !s.openAICodexTicketScopeEnabledContext(ctx, account) {
 		return nil
 	}
 	model = normalizeOpenAICodexTicketModel(model)
@@ -374,7 +407,7 @@ func (s *OpenAIGatewayService) openAICodexTicketOutboundModel(account *Account, 
 // outboundModel 必须是真正会发给上游的模型名（openAICodexTicketOutboundModel），
 // 不是客户端原始模型：注入侧读的是出站 body.model，两侧口径必须一致。
 func (s *OpenAIGatewayService) openAICodexTicketBlocksAccount(account *Account, outboundModel string) bool {
-	if s == nil || !isOpenAICodexTicketAccount(account) || !s.openAICodexTicketEnabled() {
+	if s == nil || !isOpenAICodexTicketAccount(account) || !s.openAICodexTicketScopeEnabledContext(context.Background(), account) {
 		return false
 	}
 	cfg := s.openAICodexTicketConfig()
@@ -475,6 +508,8 @@ func (s *OpenAIGatewayService) StartOpenAICodexTicketHarvester() {
 		zap.Int("ttl_seconds", s.openAICodexTicketConfig().TTLSeconds),
 		zap.Int("target_length", s.openAICodexTicketConfig().TargetLength),
 		zap.Int("team_target_length", openAICodexTicketTeamTargetLength),
+		zap.Bool("personal_enabled", s.openAICodexTicketConfig().PersonalEnabled()),
+		zap.Bool("team_enabled", s.openAICodexTicketConfig().TeamEnabled()),
 		zap.Strings("models", s.openAICodexTicketConfig().Models),
 	)
 }
@@ -528,7 +563,7 @@ func (s *OpenAIGatewayService) refreshOpenAICodexTickets(ctx context.Context) {
 	probed := 0
 	for i := range accounts {
 		account := accounts[i]
-		if account.Status != StatusActive || !isOpenAICodexTicketAccount(&account) {
+		if account.Status != StatusActive || !isOpenAICodexTicketAccount(&account) || !s.openAICodexTicketScopeEnabledContext(ctx, &account) {
 			continue
 		}
 		for _, model := range cfg.Models {
@@ -562,7 +597,7 @@ func (s *OpenAIGatewayService) refreshOpenAICodexTickets(ctx context.Context) {
 // 长度==该账号的目标长度、gAAAAA 前缀：个人 292 / Team 332）就落库；否则记
 // Info miss，交给下个周期重试。同一 key 并发去重，避免上一发还没回来又叠一发。
 func (s *OpenAIGatewayService) probeOnceOpenAICodexTicket(ctx context.Context, account *Account, model string) {
-	if s == nil || !isOpenAICodexTicketAccount(account) || ctx.Err() != nil || !s.openAICodexTicketEnabledContext(ctx) {
+	if s == nil || !isOpenAICodexTicketAccount(account) || ctx.Err() != nil || !s.openAICodexTicketScopeEnabledContext(ctx, account) {
 		return
 	}
 	cfg := s.openAICodexTicketConfig()
@@ -714,3 +749,6 @@ func RedactOpenAICodexTicketExtra(extra map[string]any) map[string]any {
 	}
 	return redacted
 }
+
+// BoolPtr 返回 bool 的指针，供配置结构（*bool 细分开关）覆写使用。
+func BoolPtr(v bool) *bool { return &v }

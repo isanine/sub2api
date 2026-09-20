@@ -247,6 +247,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpenAICodexClientVersionSynced:                     "",
 		SettingKeyOpenAICodexVersionAutoSyncEnabled:                  "true",
 		SettingKeyOpenAICodexTicketHarvestProxyURL:                   "",
+		SettingKeyOpenAICodexTicketPersonalEnabled:                   "true",
+		SettingKeyOpenAICodexTicketTeamEnabled:                       "true",
 		SettingPaymentVisibleMethodAlipaySource:                      "",
 		SettingPaymentVisibleMethodWxpaySource:                       "",
 		SettingPaymentVisibleMethodAlipayEnabled:                     "false",
@@ -897,6 +899,27 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	} else if s != nil && s.cfg != nil {
 		result.OpenAICodexTicketEnabled = s.cfg.Gateway.OpenAICodexTicket.Enabled
 	}
+	// 细分开关默认开启：缺失/空值视为 true，并回退 yaml 的 enabled_personal/enabled_team。
+	result.OpenAICodexTicketPersonalEnabled = parseOpenAICodexTicketScopeEnabled(
+		settings[SettingKeyOpenAICodexTicketPersonalEnabled],
+		func() (defined, enabled bool) {
+			if s != nil && s.cfg != nil {
+				if ptr := s.cfg.Gateway.OpenAICodexTicket.EnabledPersonal; ptr != nil {
+					return true, *ptr
+				}
+			}
+			return false, true
+		})
+	result.OpenAICodexTicketTeamEnabled = parseOpenAICodexTicketScopeEnabled(
+		settings[SettingKeyOpenAICodexTicketTeamEnabled],
+		func() (defined, enabled bool) {
+			if s != nil && s.cfg != nil {
+				if ptr := s.cfg.Gateway.OpenAICodexTicket.EnabledTeam; ptr != nil {
+					return true, *ptr
+				}
+			}
+			return false, true
+		})
 	result.OpenAICodexTicketHarvestProxyURL = strings.TrimSpace(settings[SettingKeyOpenAICodexTicketHarvestProxyURL])
 	// codex_cli_only 加固
 	result.MinCodexVersion = settings[SettingKeyMinCodexVersion]
@@ -1341,4 +1364,16 @@ func normalizeTablePreferences(defaultPageSize int, options []int) (int, []int) 
 	}
 
 	return defaultPageSize, normalizedOptions
+}
+
+// parseOpenAICodexTicketScopeEnabled 解析打票细分开关（个人 / Team）：
+// 后台设置键存在且非空 → 以其为准；否则回退 yaml 配置；yaml 也未配置 → 默认开启。
+func parseOpenAICodexTicketScopeEnabled(raw string, yamlFallback func() (defined, enabled bool)) bool {
+	if v := strings.TrimSpace(raw); v != "" {
+		return v == "true"
+	}
+	if defined, enabled := yamlFallback(); defined {
+		return enabled
+	}
+	return true
 }
