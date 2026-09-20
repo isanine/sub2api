@@ -448,3 +448,153 @@ func TestOpenAICodexTicketGate_CompactRequestUsesForwardOutboundModel(t *testing
 	// 回归锚点：按客户端原始模型判定（旧实现的口径）在 compact 下必然误拦。
 	require.True(t, svc.openAICodexTicketBlocksAccount(account, canonicalOpenAIAccountSchedulingModel(account, "gpt-6-astra")))
 }
+
+// ————— Team/Business 账号按 332 校验 —————
+
+func TestOpenAICodexTicketTargetLengthByPlanType(t *testing.T) {
+	cases := []struct {
+		planType string
+		want     int
+	}{
+		{"", 292},
+		{"free", 292},
+		{"plus", 292},
+		{"pro", 292},
+		{"abnormal", 292},
+		{"team", 332},
+		{"Team", 332},
+		{"business", 332},
+		{"self_serve_business_prolite", 332},
+		{"self_serve_business_usage_based", 332},
+		{"enterprise", 332},
+	}
+	for _, tc := range cases {
+		account := ticketTestAccount(41)
+		if tc.planType != "" {
+			account.Credentials["plan_type"] = tc.planType
+		}
+		require.Equal(t, tc.want, openAICodexTicketTargetLength(account, 292), "plan_type=%q", tc.planType)
+	}
+	// Team 与配置值无关；个人号未配置时回落默认 292。
+	team := ticketTestAccount(42)
+	team.Credentials["plan_type"] = "team"
+	require.Equal(t, 332, openAICodexTicketTargetLength(team, 0))
+	require.Equal(t, 292, openAICodexTicketTargetLength(ticketTestAccount(43), 0))
+	require.Equal(t, 292, openAICodexTicketTargetLength(nil, 292))
+}
+
+func TestApplyOpenAICodexTicket_TeamAccountAccepts332(t *testing.T) {
+	svc := ticketTestService(t, config.OpenAICodexTicketConfig{
+		Enabled:      true,
+		TargetLength: 292,
+		TTLSeconds:   3600,
+		FailClosed:   true,
+	}, nil)
+	team := ticketTestAccount(51)
+	team.Credentials["plan_type"] = "team"
+	personal := ticketTestAccount(52)
+
+	store := func(a *Account, n int) {
+		svc.storeOpenAICodexTicket(context.Background(), a, &openAICodexTicket{
+			AccountID:  a.ID,
+			Model:      "gpt-6-astra",
+			State:      fakeCodexTicketState(n),
+			Length:     n,
+			CapturedAt: time.Now(),
+			ExpiresAt:  time.Now().Add(time.Hour),
+		})
+	}
+
+	// Team 账号：332 合格、注入成功；292（个人形状）不合格。
+	store(team, 332)
+	h := http.Header{}
+	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), team, "gpt-6-astra", h))
+	require.Len(t, h.Get(openAICodexTurnStateHeader), 332)
+	require.False(t, svc.openAICodexTicketBlocksAccount(team, "gpt-6-astra"))
+
+	store(team, 292)
+	h = http.Header{}
+	require.ErrorIs(t, svc.applyOpenAICodexTicket(context.Background(), team, "gpt-6-astra", h), ErrOpenAICodexTicketUnavailable)
+	require.True(t, svc.openAICodexTicketBlocksAccount(team, "gpt-6-astra"))
+
+	// 个人账号：332（Team 形状）不合格，仍按 292 判定。
+	store(personal, 332)
+	h = http.Header{}
+	require.ErrorIs(t, svc.applyOpenAICodexTicket(context.Background(), personal, "gpt-6-astra", h), ErrOpenAICodexTicketUnavailable)
+	require.True(t, svc.openAICodexTicketBlocksAccount(personal, "gpt-6-astra"))
+
+	// 管理端状态：Team 账号带 332 票 → ready；带 292 票 → 不 ready。
+	teamReady := ticketTestAccount(53)
+	teamReady.Credentials["plan_type"] = "team"
+	teamReady.Extra = map[string]any{openAICodexTicketExtraKey("gpt-6-astra"): &openAICodexTicket{
+		Model: "gpt-6-astra", State: fakeCodexTicketState(332), Length: 332,
+		CapturedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour),
+	}}
+	teamStale := ticketTestAccount(54)
+	teamStale.Credentials["plan_type"] = "team"
+	teamStale.Extra = map[string]any{openAICodexTicketExtraKey("gpt-6-astra"): &openAICodexTicket{
+		Model: "gpt-6-astra", State: fakeCodexTicketState(292), Length: 292,
+		CapturedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour),
+	}}
+	statusCfg := config.OpenAICodexTicketConfig{Enabled: true, TargetLength: 292, FailClosed: true}
+	statuses := OpenAICodexTicketStatuses(teamReady, statusCfg, time.Now())
+	require.Len(t, statuses, 2)
+	var astra *OpenAICodexTicketStatus
+	for i := range statuses {
+		if statuses[i].Model == "gpt-6-astra" {
+			astra = &statuses[i]
+		}
+	}
+	require.NotNil(t, astra)
+	require.True(t, astra.Ready)
+	require.Equal(t, 332, astra.Length)
+	require.False(t, astra.Blocked)
+	statuses = OpenAICodexTicketStatuses(teamStale, statusCfg, time.Now())
+	for i := range statuses {
+		if statuses[i].Model == "gpt-6-astra" {
+			require.False(t, statuses[i].Ready)
+			require.True(t, statuses[i].Blocked)
+		}
+	}
+}
+
+func TestCodexTicketHarvest_TeamAccountAccepts332(t *testing.T) {
+	teamTicket := func(n int) *http.Response {
+		h := http.Header{}
+		h.Set(openAICodexTurnStateHeader, fakeCodexTicketState(n))
+		return &http.Response{StatusCode: http.StatusOK, Header: h, Body: io.NopCloser(strings.NewReader("data: {}\n\n"))}
+	}
+	cfg := config.OpenAICodexTicketConfig{
+		Enabled:         true,
+		TargetLength:    292,
+		TTLSeconds:      3600,
+		FailClosed:      true,
+		HarvestProxyURL: "http://proxy.example.com:8080",
+		Models:          []string{"gpt-6-astra"},
+	}
+
+	// Team 账号：探到 332 落库。
+	team := ticketTestAccount(61)
+	team.Credentials["plan_type"] = "team"
+	teamRepo := &codexTicketLifecycleRepo{account: *team}
+	upstream := &codexTicketFuncUpstream{do: func(*http.Request) (*http.Response, error) { return teamTicket(332), nil }}
+	svc := ticketTestService(t, cfg, upstream)
+	svc.accountRepo = teamRepo
+	svc.probeOnceOpenAICodexTicket(context.Background(), team, "gpt-6-astra")
+	require.True(t, svc.lookupOpenAICodexTicket(team, "gpt-6-astra").valid(time.Now(), 332))
+
+	// Team 账号：探到 292（个人形状）不落库。
+	personalShape := ticketTestAccount(62)
+	personalShape.Credentials["plan_type"] = "team"
+	svc2 := ticketTestService(t, cfg, &codexTicketFuncUpstream{do: func(*http.Request) (*http.Response, error) { return teamTicket(292), nil }})
+	svc2.accountRepo = &codexTicketLifecycleRepo{account: *personalShape}
+	svc2.probeOnceOpenAICodexTicket(context.Background(), personalShape, "gpt-6-astra")
+	require.Nil(t, svc2.lookupOpenAICodexTicket(personalShape, "gpt-6-astra"))
+
+	// 个人账号：探到 332（Team 形状）不落库。
+	personal := ticketTestAccount(63)
+	svc3 := ticketTestService(t, cfg, &codexTicketFuncUpstream{do: func(*http.Request) (*http.Response, error) { return teamTicket(332), nil }})
+	svc3.accountRepo = &codexTicketLifecycleRepo{account: *personal}
+	svc3.probeOnceOpenAICodexTicket(context.Background(), personal, "gpt-6-astra")
+	require.Nil(t, svc3.lookupOpenAICodexTicket(personal, "gpt-6-astra"))
+}

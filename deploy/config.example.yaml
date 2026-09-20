@@ -311,10 +311,13 @@ gateway:
   # Use this to avoid compact failures when newer models are not yet supported by the compact endpoint.
   # 当 compact 端点暂未支持更新模型时，可通过这里降级规避失败。
   openai_compact_model: "gpt-5.5"
-  # ChatGPT OAuth x-codex-turn-state ticket: harvest a 292-length header via a
+  # ChatGPT OAuth x-codex-turn-state ticket: harvest a qualified-length header via a
   # dedicated HTTP(S)/SOCKS proxy, store it for ttl_seconds (default 3600), then inject
   # it on residential-IP production requests. Off by default.
-  # ChatGPT OAuth 门票：用独立 HTTP(S)/SOCKS 代理打到 292 长度的 x-codex-turn-state，默认缓存 1 小时，
+  # Qualified length follows the account plan: personal 292 (10 blocks),
+  # Team/Business 332 (12 blocks). 312/356 are transitional shapes and rejected.
+  # ChatGPT OAuth 门票：用独立 HTTP(S)/SOCKS 代理打到合格长度的 x-codex-turn-state，默认缓存 1 小时。
+  # 合格长度按账号套餐自动区分：个人号 292（10 块）、Team/Business 332（12 块）；312/356 不作为合格值。
   # 再在住宅 IP 业务请求中覆盖该头。默认关闭。
   # Env: GATEWAY_OPENAI_CODEX_TICKET_ENABLED=true
   #      GATEWAY_OPENAI_CODEX_TICKET_HARVEST_PROXY_URL=socks5h://user:pass@host:port
@@ -324,6 +327,7 @@ gateway:
   # Credential shadow accounts retain their existing forwarding policy and are not ticket-gated.
   openai_codex_ticket:
     enabled: false
+    # 个人号的门票合格长度；Team/Business 账号固定按 332 校验，与此值无关。
     target_length: 292
     ttl_seconds: 3600
     refresh_before_seconds: 600
