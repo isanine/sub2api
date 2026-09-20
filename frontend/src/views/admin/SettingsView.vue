@@ -4551,28 +4551,6 @@
                 </div>
                 <div>
                   <h3 class="text-base font-semibold text-gray-900 dark:text-white">
-                    {{ t("admin.settings.gatewayForwarding.codexTicketHarvestProxy") }}
-                  </h3>
-                  <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    {{ t("admin.settings.gatewayForwarding.codexTicketHarvestProxyDesc") }}
-                  </p>
-                  <input
-                    id="codex-ticket-harvest-proxy"
-                    v-model="form.openai_codex_ticket_harvest_proxy_url"
-                    type="text"
-                    class="input mt-3 w-full font-mono text-sm"
-                    :placeholder="t('admin.settings.gatewayForwarding.codexTicketHarvestProxyPlaceholder')"
-                    autocomplete="off"
-                  />
-                  <p
-                    v-if="form.openai_codex_ticket_harvest_proxy_configured"
-                    class="mt-1.5 text-xs text-gray-500 dark:text-gray-400"
-                  >
-                    {{ t("admin.settings.gatewayForwarding.codexTicketHarvestProxyConfigured") }}
-                  </p>
-                </div>
-                <div>
-                  <h3 class="text-base font-semibold text-gray-900 dark:text-white">
                     {{ t("admin.settings.gatewayForwarding.codexClientRestrictionTitle") }}
                   </h3>
                   <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -9913,8 +9891,6 @@ const form = reactive<SettingsForm>({
   openai_codex_ticket_enabled: false,
   openai_codex_ticket_personal_enabled: true,
   openai_codex_ticket_team_enabled: true,
-  openai_codex_ticket_harvest_proxy_url: "",
-  openai_codex_ticket_harvest_proxy_configured: false,
   // codex_cli_only 加固
   min_codex_version: "",
   max_codex_version: "",
@@ -11524,8 +11500,6 @@ async function saveSettings() {
       openai_codex_ticket_enabled: form.openai_codex_ticket_enabled,
       openai_codex_ticket_personal_enabled: form.openai_codex_ticket_personal_enabled,
       openai_codex_ticket_team_enabled: form.openai_codex_ticket_team_enabled,
-      openai_codex_ticket_harvest_proxy_url:
-        form.openai_codex_ticket_harvest_proxy_url?.trim() || "",
       min_codex_version: form.min_codex_version?.trim() || "",
       max_codex_version: form.max_codex_version?.trim() || "",
       codex_cli_only_allow_app_server_clients:

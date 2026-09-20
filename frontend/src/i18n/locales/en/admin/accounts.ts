@@ -668,10 +668,9 @@ export default {
         codexFingerprintSession: 'Device + Session',
         codexFingerprintFull: 'Full convergence',
         codexTurnTicket: 'Codex ticket (292 personal / 332 team)',
-        codexTurnTicketDesc: 'Ticket status for the configured models. The qualified length follows the account plan automatically: 292 for personal, 332 for Team/Business. Requests are paused without a valid ticket only when fail-closed is enabled.',
-        codexTurnTicketMissing: 'No valid ticket; requests remain allowed',
+        codexTurnTicketDesc: 'Captured ticket status for the configured models (passive detection from real responses). The qualified length follows the account plan automatically: 292 for personal, 332 for Team/Business. Without a captured ticket, requests still forward normally.',
+        codexTurnTicketMissing: 'No captured ticket yet; requests forward normally',
         codexTurnTicketReady: '{time} left',
-        codexTurnTicketPaused: 'No qualified ticket; this model is paused',
         codexImageTool: 'Codex image bridge policy',
         codexImageToolDesc:
           'Controls the hosted image_generation bridge and client-declared image tools on Codex /responses text requests. Hosted auto-injection applies only to non-Responses Lite requests. Account policy takes precedence over channel and global settings; standalone image-generation endpoints are unaffected.',

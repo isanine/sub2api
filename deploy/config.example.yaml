@@ -311,24 +311,21 @@ gateway:
   # Use this to avoid compact failures when newer models are not yet supported by the compact endpoint.
   # 当 compact 端点暂未支持更新模型时，可通过这里降级规避失败。
   openai_compact_model: "gpt-5.5"
-  # ChatGPT OAuth x-codex-turn-state ticket: harvest a qualified-length header via a
-  # dedicated HTTP(S)/SOCKS proxy, store it for ttl_seconds (default 3600), then inject
-  # it on residential-IP production requests. Off by default.
-  # Qualified length follows the account plan: personal 292 (10 blocks),
-  # Team/Business 332 (12 blocks). 312/356 are transitional shapes and rejected.
-  # ChatGPT OAuth 门票：用独立 HTTP(S)/SOCKS 代理打到合格长度的 x-codex-turn-state，默认缓存 1 小时。
-  # 合格长度按账号套餐自动区分：个人号 292（10 块）、Team/Business 332（12 块）；312/356 不作为合格值。
-  # 再在住宅 IP 业务请求中覆盖该头。默认关闭。
+  # ChatGPT OAuth x-codex-turn-state ticket (passive detection): capture the header
+  # from real upstream responses (personal 10 blocks / 292 chars, Team/Business
+  # 12 blocks / 332 chars; 312/356 are transitional shapes and rejected), store it
+  # for ttl_seconds (default 3600) and inject it on later requests.
+  # No active probing, no dedicated proxy, requests are never blocked.
+  # ChatGPT OAuth 门票（被动票务检测）：从真实业务响应头捕获 x-codex-turn-state，
+  # 按账号套餐自动区分合格长度（个人 292 / Team 332），缓存默认 1 小时并在后续
+  # 请求注入。不主动打票、不配置代理、缺票不拦截、请求全部正常放行。
+  # 312 / 356 过渡形状不作为合格值。
   # Env: GATEWAY_OPENAI_CODEX_TICKET_ENABLED=true
-  #      GATEWAY_OPENAI_CODEX_TICKET_HARVEST_PROXY_URL=socks5h://user:pass@host:port
-  # Admin UI 开关（系统设置 → 网关 → Codex 设置 → 292 打票）可覆盖 enabled，无需重启。
-  # Off: do not harvest or inject. On: harvest in the background and inject on production requests.
-  # The harvest proxy should rotate egress IPs itself (fresh CONNECT per request).
-  # Credential shadow accounts retain their existing forwarding policy and are not ticket-gated.
+  # Admin UI 开关（系统设置 → 网关 → Codex 设置 → 票务检测）可覆盖 enabled，无需重启。
   openai_codex_ticket:
     enabled: false
-    # 细分范围：总开关开启后，个人号 / Team 号可独立启停（后台「系统设置 → 网关 →
-    # Codex 设置」可热更覆盖）。默认都开启，与历史行为兼容。
+    # 细分范围：总开关开启后，个人号 / Team 号可独立启停（后台可热更覆盖）。
+    # 默认都开启，与历史行为兼容。
     # Env: GATEWAY_OPENAI_CODEX_TICKET_ENABLED_PERSONAL=false
     #      GATEWAY_OPENAI_CODEX_TICKET_ENABLED_TEAM=false
     enabled_personal: true
@@ -336,13 +333,6 @@ gateway:
     # 个人号的门票合格长度；Team/Business 账号固定按 332 校验，与此值无关。
     target_length: 292
     ttl_seconds: 3600
-    refresh_before_seconds: 600
-    # 后台「系统设置 → 网关 → Codex 设置」可覆盖此值，无需重启。
-    # 后台值的读取缓存为 5 秒，下个探测周期使用新代理；代理服务商自行负责轮换 IP。
-    harvest_proxy_url: ""
-    harvest_probe_interval_seconds: 6
-    harvest_attempt_timeout_seconds: 25
-    fail_closed: true
     models:
       - gpt-6-astra
       - gpt-5.6-sol

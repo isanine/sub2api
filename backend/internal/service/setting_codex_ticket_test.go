@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -26,17 +25,10 @@ func (r *codexTicketSettingRepo) GetValue(ctx context.Context, key string) (stri
 func TestCodexTicketEnabledRuntimeSettingOverridesYaml(t *testing.T) {
 	repo := &codexTicketSettingRepo{codexPolicyMigrationRepoStub: &codexPolicyMigrationRepoStub{values: map[string]string{}}}
 	settings := NewSettingService(repo, &config.Config{})
-	svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: false, FailClosed: true}, nil)
+	svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: false})
 	svc.settingService = settings
 	account := ticketTestAccount(41)
-	svc.storeOpenAICodexTicket(context.Background(), account, &openAICodexTicket{
-		AccountID:  41,
-		Model:      "gpt-6-astra",
-		State:      fakeCodexTicketState(292),
-		Length:     292,
-		CapturedAt: time.Now(),
-		ExpiresAt:  time.Now().Add(time.Hour),
-	})
+	storeTestTicket(svc, account, "gpt-6-astra", 292)
 
 	h := http.Header{}
 	h.Set(openAICodexTurnStateHeader, "client-state")
@@ -61,59 +53,75 @@ func TestCodexTicketEnabledRuntimeSettingOverridesYaml(t *testing.T) {
 	require.Equal(t, "client-state", h.Get(openAICodexTurnStateHeader))
 }
 
-func TestRefreshOpenAICodexTickets_DisabledSkipsHarvest(t *testing.T) {
-	upstream := &httpUpstreamRecorder{}
-	svc := ticketTestService(t, config.OpenAICodexTicketConfig{
-		Enabled:         false,
-		HarvestProxyURL: "socks5h://proxy.example.com:1080",
-	}, upstream)
-	svc.accountRepo = &codexTicketRefreshRepo{accounts: []Account{*ticketTestAccount(41)}}
-	svc.refreshOpenAICodexTickets(context.Background())
-	require.Empty(t, upstream.requests)
-}
-
-func TestCodexTicketProxyRuntimeSettingAndFallback(t *testing.T) {
+func TestCodexTicketScopeRuntimeSettingsDefaultOnAndOverride(t *testing.T) {
 	repo := &codexTicketSettingRepo{codexPolicyMigrationRepoStub: &codexPolicyMigrationRepoStub{values: map[string]string{}}}
 	settings := NewSettingService(repo, &config.Config{})
-	svc := ticketTestService(t, config.OpenAICodexTicketConfig{HarvestProxyURL: "http://fallback.example.com:8080"}, nil)
+	svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: true})
 	svc.settingService = settings
-	require.Equal(t, "http://fallback.example.com:8080", svc.openAICodexTicketHarvestProxyURL())
-	repo.values[SettingKeyOpenAICodexTicketHarvestProxyURL] = "socks5h://user:secret@first.example.com:1080"
-	settings.InvalidateOpenAICodexTicketHarvestProxyCache()
-	require.Equal(t, repo.values[SettingKeyOpenAICodexTicketHarvestProxyURL], svc.openAICodexTicketHarvestProxyURL())
-	repo.values[SettingKeyOpenAICodexTicketHarvestProxyURL] = "http://second.example.com:8080"
-	settings.InvalidateOpenAICodexTicketHarvestProxyCache()
-	require.Equal(t, "http://second.example.com:8080", svc.openAICodexTicketHarvestProxyURL())
-	// Simulate another instance's settings write after the local cache expires.
-	repo.values[SettingKeyOpenAICodexTicketHarvestProxyURL] = "https://third.example.com:443"
-	settings.openAICodexTicketHarvestProxyCache.Store(&cachedOpenAICodexTicketHarvestProxy{value: "http://second.example.com:8080", expiresAt: time.Now().Add(-time.Second).UnixNano()})
-	require.Equal(t, "https://third.example.com:443", svc.openAICodexTicketHarvestProxyURL())
-	repo.err = errors.New("database unavailable")
-	settings.openAICodexTicketHarvestProxyCache.Store(&cachedOpenAICodexTicketHarvestProxy{value: "https://third.example.com:443", expiresAt: 0})
-	require.Equal(t, "https://third.example.com:443", svc.openAICodexTicketHarvestProxyURL())
-}
 
-func TestCodexTicketProxyMaskAndValidation(t *testing.T) {
-	for _, raw := range []string{"http://user:secret@proxy.example.com:8080", "socks5h://user:secret@proxy.example.com:1080", "https://user:secret@[::1]:443"} {
-		require.NoError(t, ValidateOpenAICodexTicketHarvestProxyURL(raw))
-		masked := MaskProxyURL(raw)
-		require.NotContains(t, masked, "secret")
-		require.True(t, IsMaskedProxyURL(masked))
-	}
-	require.True(t, IsMaskedProxyURL(""))
-	require.False(t, IsMaskedProxyURL("http://user:secret***suffix@proxy.example.com:8080"))
-	for _, raw := range []string{"user:secret@host:1234", "http://user:secret@", "ftp://user:secret@host:1234", "http://user:secret@host:99999", "http://host:1234/?password=secret", "http://host:1234/#secret", "http://user:secret%zz@host:1234"} {
-		err := ValidateOpenAICodexTicketHarvestProxyURL(raw)
-		require.Error(t, err)
-		require.NotContains(t, err.Error(), "secret")
-		require.Empty(t, MaskProxyURL(raw))
-	}
+	personal := ticketTestAccount(41)
+	team := ticketTestAccount(42)
+	team.Credentials["plan_type"] = "team"
+	storeTestTicket(svc, personal, "gpt-6-astra", 292)
+	storeTestTicket(svc, team, "gpt-6-astra", 332)
+
+	// 键缺失：两类默认开启（兼容历史行为）。
+	require.Len(t, applyTicket(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader), 292)
+	require.Len(t, applyTicket(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader), 332)
+
+	// 后台只关个人号。
+	repo.values[SettingKeyOpenAICodexTicketPersonalEnabled] = "false"
+	settings.InvalidateOpenAICodexTicketPersonalCache()
+	require.Equal(t, "client-state", applyTicket(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader))
+	require.Len(t, applyTicket(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader), 332)
+
+	// 后台只关 Team 号（个人号恢复）。
+	repo.values[SettingKeyOpenAICodexTicketPersonalEnabled] = "true"
+	repo.values[SettingKeyOpenAICodexTicketTeamEnabled] = "false"
+	settings.InvalidateOpenAICodexTicketPersonalCache()
+	settings.InvalidateOpenAICodexTicketTeamCache()
+	require.Len(t, applyTicket(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader), 292)
+	require.Equal(t, "client-state", applyTicket(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader))
 }
 
 func TestCodexTicketSettingsRefreshDoesNotMutateSharedConfig(t *testing.T) {
 	cfg := &config.Config{}
 	svc := NewSettingService(&codexTicketSettingRepo{codexPolicyMigrationRepoStub: &codexPolicyMigrationRepoStub{values: map[string]string{SettingKeyOpenAICodexTicketEnabled: "true"}}}, cfg)
-	svc.refreshCachedSettings(&SystemSettings{OpenAICodexTicketEnabled: true})
+	svc.refreshCachedSettings(&SystemSettings{OpenAICodexTicketEnabled: true, OpenAICodexTicketPersonalEnabled: true, OpenAICodexTicketTeamEnabled: true})
 	require.False(t, cfg.Gateway.OpenAICodexTicket.Enabled, "runtime settings must not write the shared immutable startup configuration")
 	require.True(t, svc.GetOpenAICodexTicketEnabled(context.Background(), false))
+	// 细分键缺失时回退调用方传入的 yaml 值（生产调用方传 PersonalEnabled()/TeamEnabled()，默认 true）。
+	require.False(t, svc.GetOpenAICodexTicketPersonalEnabled(context.Background(), false))
+	svc.InvalidateOpenAICodexTicketPersonalCache()
+	require.True(t, svc.GetOpenAICodexTicketPersonalEnabled(context.Background(), true))
+	svc.InvalidateOpenAICodexTicketTeamCache()
+	require.True(t, svc.GetOpenAICodexTicketTeamEnabled(context.Background(), true))
+}
+
+func TestCaptureOpenAICodexTicketRuntimeSettingGate(t *testing.T) {
+	repo := &codexTicketSettingRepo{codexPolicyMigrationRepoStub: &codexPolicyMigrationRepoStub{values: map[string]string{}}}
+	settings := NewSettingService(repo, &config.Config{})
+	svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: false, Models: []string{"gpt-6-astra"}})
+	svc.settingService = settings
+	account := ticketTestAccount(41)
+
+	// 总开关关：响应带合格票也不捕获。
+	header := http.Header{}
+	header.Set(openAICodexTurnStateHeader, fakeCodexTicketState(292))
+	svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", header)
+	require.Nil(t, svc.lookupOpenAICodexTicket(account, "gpt-6-astra"))
+
+	// 总开关开、个人细分关：仍不捕获。
+	repo.values[SettingKeyOpenAICodexTicketEnabled] = "true"
+	repo.values[SettingKeyOpenAICodexTicketPersonalEnabled] = "false"
+	settings.InvalidateOpenAICodexTicketEnabledCache()
+	settings.InvalidateOpenAICodexTicketPersonalCache()
+	svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", header)
+	require.Nil(t, svc.lookupOpenAICodexTicket(account, "gpt-6-astra"))
+
+	// 个人细分恢复：捕获成功。
+	repo.values[SettingKeyOpenAICodexTicketPersonalEnabled] = "true"
+	settings.InvalidateOpenAICodexTicketPersonalCache()
+	svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", header)
+	require.True(t, svc.lookupOpenAICodexTicket(account, "gpt-6-astra").valid(time.Now(), 292))
 }

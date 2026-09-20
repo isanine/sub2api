@@ -136,8 +136,6 @@ type SettingService struct {
 	openAICodexTicketPersonalSF        singleflight.Group
 	openAICodexTicketTeamCache         atomic.Value // *cachedOpenAICodexTicketScopeEnabled
 	openAICodexTicketTeamSF            singleflight.Group
-	openAICodexTicketHarvestProxyCache atomic.Value // *cachedOpenAICodexTicketHarvestProxy
-	openAICodexTicketHarvestProxySF    singleflight.Group
 	codexRestrictionPolicyCache        atomic.Value // *cachedCodexRestrictionPolicy
 	codexRestrictionPolicySF           singleflight.Group
 

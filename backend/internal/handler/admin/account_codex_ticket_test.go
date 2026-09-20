@@ -1,10 +1,11 @@
 package admin
 
 import (
+	"testing"
+
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestAccountResponseCodexTicketsUsesConfiguredPolicy(t *testing.T) {
@@ -12,13 +13,11 @@ func TestAccountResponseCodexTicketsUsesConfiguredPolicy(t *testing.T) {
 	h := &AccountHandler{cfg: &config.Config{}}
 	require.Empty(t, h.accountResponseFromService(account).CodexTurnTickets)
 	require.Empty(t, h.accountListResponseFromService(account).CodexTurnTickets)
-	h.cfg.Gateway.OpenAICodexTicket = config.OpenAICodexTicketConfig{Enabled: true, Models: []string{"configured-model"}, FailClosed: false}
+	h.cfg.Gateway.OpenAICodexTicket = config.OpenAICodexTicketConfig{Enabled: true, Models: []string{"configured-model"}}
 	status := h.accountListResponseFromService(account).CodexTurnTickets
 	require.Len(t, status, 1)
 	require.Equal(t, "configured-model", status[0].Model)
-	require.False(t, status[0].Blocked)
-	h.cfg.Gateway.OpenAICodexTicket.FailClosed = true
-	require.True(t, h.accountResponseFromService(account).CodexTurnTickets[0].Blocked)
+	require.False(t, status[0].Ready, "无票时未就绪，但被动模式不拦截")
 }
 
 func TestAccountResponseCodexTicketsReadsLiveSettingsAfterRestart(t *testing.T) {

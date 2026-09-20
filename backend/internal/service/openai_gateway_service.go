@@ -24,7 +24,6 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
-	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -508,13 +507,8 @@ type OpenAIGatewayService struct {
 	// 剥离跨账号回带（openai_codex_turn_state.go）。
 	openaiCodexTurnStateOrigins sync.Map
 	openaiCodexTurnStateWrites  atomic.Uint64
-	// openaiCodexTickets: accountID\x00model → *openAICodexTicket，292 长度门票。
-	openaiCodexTickets           sync.Map
-	openaiCodexTicketFlight      singleflight.Group
-	openaiCodexTicketLifecycleMu sync.Mutex
-	openaiCodexTicketCancel      context.CancelFunc
-	openaiCodexTicketDone        chan struct{}
-	openaiCodexTicketStopped     bool
+	// openaiCodexTickets: accountID\x00model → *openAICodexTicket，被动捕获的门票。
+	openaiCodexTickets sync.Map
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
@@ -592,7 +586,6 @@ func NewOpenAIGatewayService(
 		openAITokenProvider.SetAccountRuntimeBlocker(svc)
 	}
 	svc.logOpenAIWSModeBootstrap()
-	svc.StartOpenAICodexTicketHarvester()
 	return svc
 }
 

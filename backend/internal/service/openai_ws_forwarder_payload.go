@@ -141,9 +141,8 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if state := strings.TrimSpace(turnState); state != "" {
 		headers.Set(openAIWSTurnStateHeader, state)
 	}
-	if err := s.applyOpenAICodexTicket(ctx, account, routingModel, headers); err != nil {
-		return nil, sessionResolution, err
-	}
+	// 被动票务检测：有已捕获的票则注入，无票透传客户端自带头，永不拦截。
+	_ = s.applyOpenAICodexTicket(ctx, account, routingModel, headers)
 	if metadata := strings.TrimSpace(turnMetadata); metadata != "" {
 		headers.Set(openAIWSTurnMetadataHeader, metadata)
 	}

@@ -383,9 +383,8 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if compatTurnState != "" && upstreamReq.Header.Get("x-codex-turn-state") == "" {
 		upstreamReq.Header.Set("x-codex-turn-state", compatTurnState)
 	}
-	if err := s.applyOpenAICodexTicket(ctx, account, upstreamModel, upstreamReq.Header); err != nil {
-		return nil, err
-	}
+	// 被动票务检测：有已捕获的票则注入，无票透传客户端自带头，永不拦截。
+	_ = s.applyOpenAICodexTicket(ctx, account, upstreamModel, upstreamReq.Header)
 
 	// 7. Send request
 	proxyURL := ""

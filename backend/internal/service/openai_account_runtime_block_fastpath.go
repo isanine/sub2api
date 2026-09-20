@@ -552,16 +552,12 @@ func (s *OpenAIGatewayService) clearOpenAIAccountRuntimeBlockIfUnchanged(account
 // block is dropped with generation+deadline CAS. Model-scoped transient blocks
 // are left alone. This is fail-open if a DB write failed or the snapshot has
 // not caught up yet: empty cooldown fields drop the local account-level block.
-// requireCompact 必须与 Forward 的 /responses/compact 判定同源（两侧都来自
-// IsOpenAIResponsesCompactPath）：门票门控按真正出站的模型名判定，否则 compact
-// 请求会被按客户端原始模型误拦（见 openAICodexTicketOutboundModel）。
+// requireCompact 与 Forward 的 /responses/compact 判定同源（两侧都来自
+// IsOpenAIResponsesCompactPath）。被动票务检测下门票不再拦截调度：
+// 无票账号正常响应，缺票只在未捕获到票时透传客户端自带头。
 func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string, requireCompact bool) bool {
 	if s == nil {
 		return false
-	}
-	outboundModel := s.openAICodexTicketOutboundModel(account, requestedModel, requireCompact)
-	if s.openAICodexTicketBlocksAccount(account, outboundModel) {
-		return true
 	}
 	snapshot := s.peekOpenAIAccountRuntimeBlock(account)
 	if snapshot.blocked {

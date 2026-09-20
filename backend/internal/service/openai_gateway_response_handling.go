@@ -77,6 +77,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	} else {
 		s.relayOpenAICodexTurnState(c, account, resp.Header)
 	}
+	// 被动票务检测：真实业务响应携带合格 turn-state 时按（账号, 模型）捕获。
+	s.captureOpenAICodexTicketFromResponse(account, mappedModel, resp.Header)
 
 	// Set SSE response headers
 	c.Header("Content-Type", "text/event-stream")
@@ -1653,6 +1655,8 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	// Codex 协议要求 /responses/compact JSON 响应携带 x-codex-turn-state
 	// （codex-api/src/endpoint/compact.rs 从响应头捕获），显式回传。
 	s.relayOpenAICodexTurnState(c, account, resp.Header)
+	// 被动票务检测：真实业务响应携带合格 turn-state 时按（账号, 模型）捕获。
+	s.captureOpenAICodexTicketFromResponse(account, mappedModel, resp.Header)
 
 	contentType := "application/json"
 	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
@@ -1760,6 +1764,8 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, usage, terminalType, false)
 	s.relayOpenAICodexTurnState(c, account, resp.Header)
+	// 被动票务检测：真实业务响应携带合格 turn-state 时按（账号, 模型）捕获。
+	s.captureOpenAICodexTicketFromResponse(account, mappedModel, resp.Header)
 
 	contentType := "application/json; charset=utf-8"
 	if !ok {
