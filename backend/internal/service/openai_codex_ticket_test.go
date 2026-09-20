@@ -285,8 +285,6 @@ func TestOpenAICodexTicketScopeSwitch_GatesPerAccountType(t *testing.T) {
 // ————— 管理端状态 —————
 
 func TestOpenAICodexTicketStatuses_ReportsRemainingTTLAndScope(t *testing.T) {
-	cfg := config.OpenAICodexTicketConfig{Enabled: true, TargetLength: 292, FailClosed: true}
-	_ = cfg
 	statusCfg := config.OpenAICodexTicketConfig{Enabled: true, TargetLength: 292, TTLSeconds: 3600}
 	account := ticketTestAccount(41)
 	exp := time.Now().Add(30 * time.Minute)
@@ -348,4 +346,87 @@ func TestParseOpenAICodexTicketFromAnyFillLength(t *testing.T) {
 	require.Equal(t, 292, ticket.Length)
 	require.Equal(t, int64(7), ticket.AccountID)
 	require.Nil(t, parseOpenAICodexTicketFromAny(7, "m", nil))
+}
+
+// ————— 连续未捕获 → 一次性优先级降级 —————
+
+type demoteRecorderRepo struct {
+	AccountRepository
+	demoted []int64
+}
+
+func (r *demoteRecorderRepo) DemoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error) {
+	r.demoted = append(r.demoted, accountID)
+	return true, nil
+}
+
+func (r *demoteRecorderRepo) UpdateExtra(ctx context.Context, accountID int64, extra map[string]any) error {
+	return nil
+}
+
+func missResponse() http.Header { return http.Header{} }
+
+func TestCaptureOpenAICodexTicket_DemotesAfterConsecutiveMisses(t *testing.T) {
+	cfg := config.OpenAICodexTicketConfig{
+		Enabled: true, TargetLength: 292, TTLSeconds: 3600,
+		Models: []string{"gpt-6-astra", "gpt-5.6-sol"},
+		PriorityDemoteThreshold: 100,
+	}
+	repo := &demoteRecorderRepo{}
+	svc := ticketTestService(t, cfg)
+	svc.accountRepo = repo
+	account := ticketTestAccount(41)
+
+	// 99 次未捕获：不降级。
+	for i := 0; i < 99; i++ {
+		svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", missResponse())
+	}
+	require.Empty(t, repo.demoted)
+
+	// 第 100 次且两个模型都无票：降级一次。
+	svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", missResponse())
+	require.Equal(t, []int64{41}, repo.demoted)
+
+	// 捕获成功后计数清零：再 99 次 miss 不会再次降级。
+	svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", captureResponseHeader(292))
+	require.True(t, svc.lookupOpenAICodexTicket(account, "gpt-6-astra").valid(time.Now(), 292))
+	for i := 0; i < 99; i++ {
+		svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", missResponse())
+	}
+	require.Len(t, repo.demoted, 1)
+
+	// 已降过级（repo 返回 false 场景由 SQL 保证）；阈值 0 = 关闭。
+	offCfg := cfg
+	offCfg.PriorityDemoteThreshold = 0
+	offRepo := &demoteRecorderRepo{}
+	offSvc := ticketTestService(t, offCfg)
+	offSvc.accountRepo = offRepo
+	off := ticketTestAccount(42)
+	for i := 0; i < 300; i++ {
+		offSvc.captureOpenAICodexTicketFromResponse(off, "gpt-6-astra", missResponse())
+	}
+	require.Empty(t, offRepo.demoted)
+}
+
+func TestCaptureOpenAICodexTicket_NoDemoteWhileOtherModelHasTicket(t *testing.T) {
+	cfg := config.OpenAICodexTicketConfig{
+		Enabled: true, TargetLength: 292, TTLSeconds: 3600,
+		Models: []string{"gpt-6-astra", "gpt-5.6-sol"},
+		PriorityDemoteThreshold: 100,
+	}
+	repo := &demoteRecorderRepo{}
+	svc := ticketTestService(t, cfg)
+	svc.accountRepo = repo
+	account := ticketTestAccount(41)
+
+	// gpt-5.6-sol 持有有效票，gpt-6-astra 连续 100 次 miss：不降级（另一模型有票）。
+	storeTestTicket(svc, account, "gpt-5.6-sol", 292)
+	for i := 0; i < 100; i++ {
+		svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", missResponse())
+	}
+	require.Empty(t, repo.demoted)
+
+	// 持票模型的 miss 不计数（模型仍有有效票时）。
+	svc.captureOpenAICodexTicketFromResponse(account, "gpt-5.6-sol", missResponse())
+	require.Empty(t, repo.demoted)
 }

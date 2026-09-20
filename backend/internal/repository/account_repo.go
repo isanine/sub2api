@@ -1082,6 +1082,39 @@ func (r *accountRepository) RestoreAccountFromRecycleBin(ctx context.Context, bi
 	return r.GetByID(ctx, accountID)
 }
 
+// DemoteCodexTicketPriority 账号因连续未捕获门票一次性降级：优先级 +1 并打上
+// codex_ticket_priority_demoted 标记（已降过级则不动）。原子 UPDATE，
+// 返回是否本次执行了降级。
+func (r *accountRepository) DemoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error) {
+	ret, err := r.client.ExecContext(ctx, `
+		UPDATE accounts
+		SET priority = priority + 1,
+		    updated_at = now(),
+		    extra = jsonb_set(COALESCE(extra, '{}'::jsonb), '{codex_ticket_priority_demoted}', 'true'::jsonb, true)
+		WHERE id = $1
+		  AND deleted_at IS NULL
+		  AND COALESCE(extra ->> 'codex_ticket_priority_demoted', 'false') <> 'true'`,
+		accountID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := ret.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if affected == 0 {
+		return false, nil
+	}
+	// 调度器感知优先级变化（尽力而为）。
+	groupIDs, err := r.loadAccountGroupIDs(ctx, accountID)
+	if err == nil {
+		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &accountID, nil, buildSchedulerGroupPayload(groupIDs)); err != nil {
+			logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue ticket demote failed: account=%d err=%v", accountID, err)
+		}
+	}
+	return true, nil
+}
+
 // PurgeAccountRecycleBinEntry 永久删除回收站条目。
 func (r *accountRepository) PurgeAccountRecycleBinEntry(ctx context.Context, binID int64) error {
 	_, err := r.client.ExecContext(ctx, "DELETE FROM accounts_recycle_bin WHERE id = $1", binID)

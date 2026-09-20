@@ -73,6 +73,9 @@ type AccountRepository interface {
 	RestoreAccountFromRecycleBin(ctx context.Context, binID int64) (*Account, error)
 	// PurgeAccountRecycleBinEntry 永久删除回收站条目（不影响已存在的账号）。
 	PurgeAccountRecycleBinEntry(ctx context.Context, binID int64) error
+	// DemoteCodexTicketPriority 因连续未捕获门票一次性降级账号优先级（+1）。
+	// 返回是否执行了降级；已降过级返回 false。
+	DemoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error)
 
 	List(ctx context.Context, params pagination.PaginationParams) ([]Account, *pagination.PaginationResult, error)
 	ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, *pagination.PaginationResult, error)

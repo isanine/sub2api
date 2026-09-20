@@ -332,6 +332,11 @@ gateway:
     enabled_team: true
     # 个人号的门票合格长度；Team/Business 账号固定按 332 校验，与此值无关。
     target_length: 292
+    # 连续未捕获门票达到该次数、且所有门控模型（gpt-6-astra / gpt-5.6-sol）都
+    # 无有效票时，账号优先级 +1（数值越大调度越靠后），让有票账号优先被用。
+    # 每个账号只自动降一次，不重复降；捕获成功即清零计数。0 = 关闭自动降级。
+    # Env: GATEWAY_OPENAI_CODEX_TICKET_PRIORITY_DEMOTE_THRESHOLD=100
+    priority_demote_threshold: 100
     ttl_seconds: 3600
     models:
       - gpt-6-astra

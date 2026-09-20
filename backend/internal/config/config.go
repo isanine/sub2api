@@ -1225,15 +1225,13 @@ func (c *UserMessageQueueConfig) GetEffectiveMode() string {
 // 打票走 harvest_proxy_url（SOCKS），业务出站仍用账号住宅 proxy_id，只替换该请求头。
 // 门票默认有效 3600 秒，临近过期前 refresh_before_seconds 重新打票。
 type OpenAICodexTicketConfig struct {
-	Enabled                      bool     `mapstructure:"enabled"`
-	TargetLength                 int      `mapstructure:"target_length"`
-	TTLSeconds                   int      `mapstructure:"ttl_seconds"`
-	RefreshBeforeSeconds         int      `mapstructure:"refresh_before_seconds"`
-	HarvestProxyURL              string   `mapstructure:"harvest_proxy_url"`
-	HarvestProbeIntervalSeconds  int      `mapstructure:"harvest_probe_interval_seconds"`
-	HarvestAttemptTimeoutSeconds int      `mapstructure:"harvest_attempt_timeout_seconds"`
-	FailClosed                   bool     `mapstructure:"fail_closed"`
-	Models                       []string `mapstructure:"models"`
+	Enabled      bool     `mapstructure:"enabled"`
+	TargetLength int      `mapstructure:"target_length"`
+	TTLSeconds   int      `mapstructure:"ttl_seconds"`
+	Models       []string `mapstructure:"models"`
+	// PriorityDemoteThreshold 连续未捕获门票达到该次数且所有门控模型都无
+	// 有效票时，账号优先级 +1（数值越大越靠后，只降一次）。0 = 关闭自动降级。
+	PriorityDemoteThreshold int `mapstructure:"priority_demote_threshold"`
 	// EnabledPersonal / EnabledTeam 细分打票范围：总开关 enabled 开启后，
 	// 个人号 / Team 号可独立启停。nil = 跟随总开关（默认开启），与历史行为兼容。
 	EnabledPersonal *bool `mapstructure:"enabled_personal"`
@@ -2418,11 +2416,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_codex_ticket.enabled_team", true)
 	viper.SetDefault("gateway.openai_codex_ticket.target_length", 292)
 	viper.SetDefault("gateway.openai_codex_ticket.ttl_seconds", 3600)
-	viper.SetDefault("gateway.openai_codex_ticket.refresh_before_seconds", 600)
-	viper.SetDefault("gateway.openai_codex_ticket.harvest_proxy_url", "")
-	viper.SetDefault("gateway.openai_codex_ticket.harvest_probe_interval_seconds", 6)
-	viper.SetDefault("gateway.openai_codex_ticket.harvest_attempt_timeout_seconds", 25)
-	viper.SetDefault("gateway.openai_codex_ticket.fail_closed", true)
+	viper.SetDefault("gateway.openai_codex_ticket.priority_demote_threshold", 100)
 	viper.SetDefault("gateway.openai_codex_ticket.models", []string{"gpt-6-astra", "gpt-5.6-sol"})
 	viper.SetDefault("gateway.live.max_session_duration_seconds", 3600)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）

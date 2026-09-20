@@ -846,3 +846,7 @@ func (s *stubAdminService) RestoreAccountFromRecycleBin(ctx context.Context, bin
 func (s *stubAdminService) PurgeAccountRecycleBinEntry(ctx context.Context, binID int64) error {
 	return nil
 }
+
+func (s *stubAdminService) DemoteCodexTicketPriority(ctx context.Context, accountID int64) (bool, error) {
+	return false, nil
+}

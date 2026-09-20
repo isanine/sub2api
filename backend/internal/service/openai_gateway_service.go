@@ -509,6 +509,9 @@ type OpenAIGatewayService struct {
 	openaiCodexTurnStateWrites  atomic.Uint64
 	// openaiCodexTickets: accountID\x00model → *openAICodexTicket，被动捕获的门票。
 	openaiCodexTickets sync.Map
+	// openaiCodexTicketMissCounts: accountID → *atomic.Int64，门控模型响应连续未捕获
+	// 次数；捕获成功清零，达到阈值触发一次性优先级降级。
+	openaiCodexTicketMissCounts sync.Map
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
