@@ -382,6 +382,11 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.PUT("/:id/ollama-cloud-usage/auto-refresh", h.Admin.Account.SetOllamaCloudUsageAutoRefresh)
 		accounts.POST("/:id/ollama-cloud-usage/refresh", h.Admin.Account.RefreshOllamaCloudUsage)
 		accounts.DELETE("/:id", h.Admin.Account.Delete)
+
+		// 账号回收站：删除快照的列表 / 还原 / 永久删除
+		accounts.GET("/recycle-bin", h.Admin.Account.GetAccountRecycleBin)
+		accounts.POST("/recycle-bin/:id/restore", h.Admin.Account.RestoreAccountFromRecycleBin)
+		accounts.DELETE("/recycle-bin/:id", h.Admin.Account.PurgeAccountRecycleBinEntry)
 		accounts.POST("/:id/test", h.Admin.Account.Test)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)

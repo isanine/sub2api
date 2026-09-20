@@ -588,7 +588,21 @@ export default {
         official: '{platform} official API'
       },
       // OpenAI specific hints
-      openai: {
+      recycleBin: {
+      title: 'Account Recycle Bin',
+      desc: 'Deleting an account stores a full snapshot (credentials and groups included) that can be restored within 30 days. Restoring keeps the original account ID so usage history stays linked. Entries can also be purged permanently.',
+      empty: 'Recycle bin is empty',
+      name: 'Name',
+      platform: 'Platform',
+      type: 'Type',
+      deletedAt: 'Deleted At',
+      deletedBy: 'Deleted By',
+      actions: 'Actions',
+      restore: 'Restore',
+      purge: 'Purge',
+      purgeConfirm: 'Permanently delete "{name}"? This cannot be undone — the account snapshot (including credentials) will be erased.',
+    },
+    openai: {
         baseUrlHint: 'Leave default for official OpenAI API',
         apiKeyHint: 'Your OpenAI API Key',
         oauthPassthrough: 'Auto passthrough (auth only)',

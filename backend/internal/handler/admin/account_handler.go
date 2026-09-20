@@ -28,6 +28,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -1251,7 +1252,7 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	err = h.adminService.DeleteAccount(c.Request.Context(), accountID)
+	err = h.adminService.DeleteAccount(accountRecycleOperatorCtx(c), accountID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -1850,7 +1851,7 @@ func (h *AccountHandler) BatchDelete(c *gin.Context) {
 	}
 
 	const maxConcurrency = 5
-	g, gctx := errgroup.WithContext(c.Request.Context())
+	g, gctx := errgroup.WithContext(accountRecycleOperatorCtx(c))
 	g.SetLimit(maxConcurrency)
 
 	var mu sync.Mutex
@@ -3318,4 +3319,64 @@ func sanitizeExtraBaseRPM(extra map[string]any) {
 		v = 10000
 	}
 	extra["base_rpm"] = v
+}
+
+// accountRecycleOperatorCtx 把当前管理端操作人附加到 ctx，供回收站快照记录。
+func accountRecycleOperatorCtx(c *gin.Context) context.Context {
+	op := service.AccountRecycleOperator{
+		UserID: 0,
+		Email:  c.GetString(middleware.ContextKeyAuthEmail),
+	}
+	if subject, ok := middleware.GetAuthSubjectFromContext(c); ok {
+		op.UserID = subject.UserID
+	}
+	return service.ContextWithAccountRecycleOperator(c.Request.Context(), op)
+}
+
+// GetAccountRecycleBin 列出账号回收站。
+// GET /api/v1/admin/accounts/recycle-bin
+func (h *AccountHandler) GetAccountRecycleBin(c *gin.Context) {
+	limit := 200
+	if v := strings.TrimSpace(c.Query("limit")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+	entries, err := h.adminService.ListAccountRecycleBin(c.Request.Context(), limit)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"items": entries})
+}
+
+// RestoreAccountFromRecycleBin 从回收站还原账号。
+// POST /api/v1/admin/accounts/recycle-bin/:id/restore
+func (h *AccountHandler) RestoreAccountFromRecycleBin(c *gin.Context) {
+	binID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || binID <= 0 {
+		response.BadRequest(c, "Invalid recycle bin ID")
+		return
+	}
+	account, err := h.adminService.RestoreAccountFromRecycleBin(accountRecycleOperatorCtx(c), binID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"account_id": account.ID, "message": "Account restored successfully"})
+}
+
+// PurgeAccountRecycleBinEntry 永久删除回收站条目。
+// DELETE /api/v1/admin/accounts/recycle-bin/:id
+func (h *AccountHandler) PurgeAccountRecycleBinEntry(c *gin.Context) {
+	binID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || binID <= 0 {
+		response.BadRequest(c, "Invalid recycle bin ID")
+		return
+	}
+	if err := h.adminService.PurgeAccountRecycleBinEntry(c.Request.Context(), binID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "Recycle bin entry purged"})
 }

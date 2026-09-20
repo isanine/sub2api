@@ -114,6 +114,12 @@
                           {{ t('admin.accounts.selectedCount', { count: selIds.length }) }}
                         </span>
                       </button>
+                      <button class="account-tools-menu-item" @click="showRecycleBin = true">
+                        <span class="account-tools-menu-icon bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
+                          <Icon name="trash" size="sm" />
+                        </span>
+                        <span class="flex-1 text-left">{{ t('admin.accounts.recycleBin.title') }}</span>
+                      </button>
 
                       <div class="my-2 border-t border-gray-100 dark:border-dark-700"></div>
                       <div class="px-2 py-2">
@@ -459,6 +465,7 @@
     <AccountActionMenu :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
+    <RecycleBinModal :show="showRecycleBin" @close="showRecycleBin = false" @restored="reload" />
     <BulkEditAccountModal
       :show="showBulkEdit"
       :account-ids="selIds"
@@ -512,6 +519,7 @@ import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
 import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
 import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
+import RecycleBinModal from '@/components/admin/account/RecycleBinModal.vue'
 import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
 import type { SelectOption } from '@/components/common/Select.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
@@ -591,6 +599,7 @@ const showCreate = ref(false)
 const showEdit = ref(false)
 const showSync = ref(false)
 const showImportData = ref(false)
+const showRecycleBin = ref(false)
 const showExportDataDialog = ref(false)
 const includeProxyOnExport = ref(true)
 const showBulkEdit = ref(false)

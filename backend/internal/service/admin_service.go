@@ -93,6 +93,12 @@ type AdminService interface {
 	// 用于刷新流程持久化 account_uuid / org_uuid 等少量键，避免被全量快照覆盖。
 	UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error
 	DeleteAccount(ctx context.Context, id int64) error
+	// ListAccountRecycleBin 列出账号回收站（最近删除优先）。
+	ListAccountRecycleBin(ctx context.Context, limit int) ([]AccountRecycleBinEntry, error)
+	// RestoreAccountFromRecycleBin 按回收站条目 ID 还原账号（保留原账号 ID 与分组）。
+	RestoreAccountFromRecycleBin(ctx context.Context, binID int64) (*Account, error)
+	// PurgeAccountRecycleBinEntry 永久删除回收站条目。
+	PurgeAccountRecycleBinEntry(ctx context.Context, binID int64) error
 	RefreshAccountCredentials(ctx context.Context, id int64) (*Account, error)
 	ClearAccountError(ctx context.Context, id int64) (*Account, error)
 	SetAccountError(ctx context.Context, id int64, errorMsg string) error

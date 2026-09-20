@@ -66,6 +66,14 @@ type AccountRepository interface {
 	Update(ctx context.Context, account *Account) error
 	Delete(ctx context.Context, id int64) error
 
+	// ————— 回收站 —————
+	// ListAccountRecycleBin 返回最近删除的账号快照（默认按删除时间倒序）。
+	ListAccountRecycleBin(ctx context.Context, limit int) ([]AccountRecycleBinEntry, error)
+	// RestoreAccountFromRecycleBin 按回收站条目 ID 还原账号（保留原账号 ID 与分组关系）。
+	RestoreAccountFromRecycleBin(ctx context.Context, binID int64) (*Account, error)
+	// PurgeAccountRecycleBinEntry 永久删除回收站条目（不影响已存在的账号）。
+	PurgeAccountRecycleBinEntry(ctx context.Context, binID int64) error
+
 	List(ctx context.Context, params pagination.PaginationParams) ([]Account, *pagination.PaginationResult, error)
 	ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, *pagination.PaginationResult, error)
 	// ListAllWithFilters 返回符合过滤条件的全部账号（不分页），用于账号列表页
