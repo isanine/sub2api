@@ -40,7 +40,6 @@ func TestCodexTicketEnabledRuntimeSettingOverridesYaml(t *testing.T) {
 	settings.InvalidateOpenAICodexTicketEnabledCache()
 	require.True(t, svc.openAICodexTicketEnabled())
 	h = http.Header{}
-	h.Set(openAICodexTurnStateHeader, "client-state")
 	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), account, "gpt-6-astra", h))
 	require.Equal(t, fakeCodexTicketState(292), h.Get(openAICodexTurnStateHeader))
 
@@ -65,23 +64,23 @@ func TestCodexTicketScopeRuntimeSettingsDefaultOnAndOverride(t *testing.T) {
 	storeTestTicket(svc, personal, "gpt-6-astra", 292)
 	storeTestTicket(svc, team, "gpt-6-astra", 332)
 
-	// 键缺失：两类默认开启（兼容历史行为）。
-	require.Len(t, applyTicket(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader), 292)
-	require.Len(t, applyTicket(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader), 332)
+	// 键缺失：两类默认开启（兼容历史行为）。客户端未携带头时注入。
+	require.Len(t, applyTicketBare(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader), 292)
+	require.Len(t, applyTicketBare(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader), 332)
 
 	// 后台只关个人号。
 	repo.values[SettingKeyOpenAICodexTicketPersonalEnabled] = "false"
 	settings.InvalidateOpenAICodexTicketPersonalCache()
-	require.Equal(t, "client-state", applyTicket(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader))
-	require.Len(t, applyTicket(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader), 332)
+	require.Empty(t, applyTicketBare(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader))
+	require.Len(t, applyTicketBare(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader), 332)
 
 	// 后台只关 Team 号（个人号恢复）。
 	repo.values[SettingKeyOpenAICodexTicketPersonalEnabled] = "true"
 	repo.values[SettingKeyOpenAICodexTicketTeamEnabled] = "false"
 	settings.InvalidateOpenAICodexTicketPersonalCache()
 	settings.InvalidateOpenAICodexTicketTeamCache()
-	require.Len(t, applyTicket(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader), 292)
-	require.Equal(t, "client-state", applyTicket(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader))
+	require.Len(t, applyTicketBare(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader), 292)
+	require.Empty(t, applyTicketBare(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader))
 }
 
 func TestCodexTicketSettingsRefreshDoesNotMutateSharedConfig(t *testing.T) {

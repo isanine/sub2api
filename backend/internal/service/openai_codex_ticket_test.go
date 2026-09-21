@@ -58,24 +58,49 @@ func applyTicket(t *testing.T, svc *OpenAIGatewayService, a *Account, model stri
 	return h
 }
 
-// ————— 注入：有票覆盖、无票透传、永不拦截 —————
+// applyTicketBare 客户端未携带 turn-state 时的注入路径。
+func applyTicketBare(t *testing.T, svc *OpenAIGatewayService, a *Account, model string) http.Header {
+	t.Helper()
+	h := http.Header{}
+	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), a, model, h))
+	return h
+}
 
-func TestApplyOpenAICodexTicket_ReplacesHeader(t *testing.T) {
+// ————— 注入：实时优先（客户端自带头透传）、缺头注入、永不拦截 —————
+
+func TestApplyOpenAICodexTicket_InjectsWhenClientHasNone(t *testing.T) {
 	svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: true, TargetLength: 292, TTLSeconds: 3600})
 	account := ticketTestAccount(41)
 	storeTestTicket(svc, account, "gpt-6-astra", 292)
 
-	h := applyTicket(t, svc, account, "gpt-6-astra")
+	// 客户端未携带（Claude 桥场景）：注入最近实时捕获的票。
+	h := http.Header{}
+	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), account, "gpt-6-astra", h))
 	require.Equal(t, fakeCodexTicketState(292), h.Get(openAICodexTurnStateHeader))
+}
+
+func TestApplyOpenAICodexTicket_ClientEchoWinsOverStoredTicket(t *testing.T) {
+	svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: true, TargetLength: 292, TTLSeconds: 3600})
+	account := ticketTestAccount(41)
+	storeTestTicket(svc, account, "gpt-6-astra", 292)
+
+	// 实时优先：客户端回带的头（同会话上一响应值，上游可能已轮换）绝不覆盖。
+	h := applyTicket(t, svc, account, "gpt-6-astra")
+	require.Equal(t, "client-state", h.Get(openAICodexTurnStateHeader))
 }
 
 func TestApplyOpenAICodexTicket_NoTicketPassesThroughAndNeverBlocks(t *testing.T) {
 	svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: true, TargetLength: 292, TTLSeconds: 3600})
 	account := ticketTestAccount(41)
 
-	// 无票：客户端自带头原样透传，不返回错误（被动模式无 fail_closed）。
-	h := applyTicket(t, svc, account, "gpt-6-astra")
-	require.Equal(t, "client-state", h.Get(openAICodexTurnStateHeader))
+	// 无票且客户端未带：头保持为空，不返回错误（被动模式无 fail_closed）。
+	h := http.Header{}
+	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), account, "gpt-6-astra", h))
+	require.Empty(t, h.Get(openAICodexTurnStateHeader))
+
+	// 客户端自带：透传。
+	h2 := applyTicket(t, svc, account, "gpt-6-astra")
+	require.Equal(t, "client-state", h2.Get(openAICodexTurnStateHeader))
 
 	// 票过期：同样透传。
 	storeTestTicket(svc, account, "gpt-6-astra", 292)
@@ -98,14 +123,15 @@ func TestApplyOpenAICodexTicket_DoesNotReuseOtherModelOrAccount(t *testing.T) {
 	b := ticketTestAccount(42)
 	storeTestTicket(svc, a, "gpt-6-astra", 292)
 
-	// 其他模型：不动。
+	// 其他模型：客户端自带头透传，不注入。
 	h := applyTicket(t, svc, a, "gpt-5.5")
 	require.Equal(t, "client-state", h.Get(openAICodexTurnStateHeader))
 	// 其他账号：不动。
 	h = applyTicket(t, svc, b, "gpt-6-astra")
 	require.Equal(t, "client-state", h.Get(openAICodexTurnStateHeader))
-	// 本账号本模型：注入。
-	h = applyTicket(t, svc, a, "gpt-6-astra")
+	// 本账号本模型且客户端未携带：注入。
+	h = http.Header{}
+	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), a, "gpt-6-astra", h))
 	require.Len(t, h.Get(openAICodexTurnStateHeader), 292)
 }
 
@@ -247,8 +273,8 @@ func TestOpenAICodexTicketScopeSwitch_GatesPerAccountType(t *testing.T) {
 		svc := ticketTestService(t, cfg)
 		storeTestTicket(svc, personal, "gpt-6-astra", 292)
 		storeTestTicket(svc, team, "gpt-6-astra", 332)
-		require.Len(t, applyTicket(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader), 292)
-		require.Len(t, applyTicket(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader), 332)
+		require.Len(t, applyTicketBare(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader), 292)
+		require.Len(t, applyTicketBare(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader), 332)
 	})
 
 	t.Run("关闭个人号只影响个人号", func(t *testing.T) {
@@ -257,8 +283,8 @@ func TestOpenAICodexTicketScopeSwitch_GatesPerAccountType(t *testing.T) {
 		svc := ticketTestService(t, c)
 		storeTestTicket(svc, personal, "gpt-6-astra", 292)
 		storeTestTicket(svc, team, "gpt-6-astra", 332)
-		require.Equal(t, "client-state", applyTicket(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader))
-		require.Len(t, applyTicket(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader), 332)
+		require.Empty(t, applyTicketBare(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader))
+		require.Len(t, applyTicketBare(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader), 332)
 	})
 
 	t.Run("关闭 Team 号只影响 Team 号", func(t *testing.T) {
@@ -267,8 +293,8 @@ func TestOpenAICodexTicketScopeSwitch_GatesPerAccountType(t *testing.T) {
 		svc := ticketTestService(t, c)
 		storeTestTicket(svc, personal, "gpt-6-astra", 292)
 		storeTestTicket(svc, team, "gpt-6-astra", 332)
-		require.Len(t, applyTicket(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader), 292)
-		require.Equal(t, "client-state", applyTicket(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader))
+		require.Len(t, applyTicketBare(t, svc, personal, "gpt-6-astra").Get(openAICodexTurnStateHeader), 292)
+		require.Empty(t, applyTicketBare(t, svc, team, "gpt-6-astra").Get(openAICodexTurnStateHeader))
 	})
 
 	t.Run("总开关关闭时细分开关无效", func(t *testing.T) {

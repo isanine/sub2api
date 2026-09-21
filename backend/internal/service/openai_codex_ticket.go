@@ -514,10 +514,17 @@ func (s *OpenAIGatewayService) noteOpenAICodexTicketMiss(account *Account, cfg c
 	}
 }
 
-// applyOpenAICodexTicket 在出站请求上注入已捕获的门票。
-// 被动模式下永不拦截：无票时保持客户端自带头原样透传，返回值恒为 nil。
+// applyOpenAICodexTicket 在出站请求上注入最近实时捕获的门票。
+// 实时优先：上游现在会在响应中轮换 turn-state（即使提交了合格的 292/332），
+// 同会话上一响应回带的头才是最新鲜的值——客户端已携带时原样透传、绝不覆盖，
+// 仅在客户端未携带（如 Claude 兼容桥）时注入存储票。被动模式永不拦截。
 func (s *OpenAIGatewayService) applyOpenAICodexTicket(ctx context.Context, account *Account, model string, h http.Header) error {
 	if s == nil || h == nil || !isOpenAICodexTicketAccount(account) || !s.openAICodexTicketScopeEnabledContext(ctx, account) {
+		return nil
+	}
+	// 实时检测：客户端自带的 turn-state 优先（跨账号回带已由
+	// guardOpenAICodexTurnStateEcho 在调用前剥离），不覆盖。
+	if strings.TrimSpace(h.Get(openAICodexTurnStateHeader)) != "" {
 		return nil
 	}
 	model = normalizeOpenAICodexTicketModel(model)
