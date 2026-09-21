@@ -643,6 +643,7 @@ export interface SystemSettings {
   openai_codex_ticket_personal_enabled: boolean;
   openai_codex_ticket_team_enabled: boolean;
   openai_codex_ticket_demote_threshold: number;
+  openai_codex_ticket_override_sticky: boolean;
   // codex_cli_only 加固
   min_codex_version: string;
   max_codex_version: string;
@@ -966,6 +967,7 @@ export interface UpdateSettingsRequest {
   openai_codex_ticket_personal_enabled?: boolean;
   openai_codex_ticket_team_enabled?: boolean;
   openai_codex_ticket_demote_threshold?: number;
+  openai_codex_ticket_override_sticky?: boolean;
   // codex_cli_only 加固
   min_codex_version?: string;
   max_codex_version?: string;

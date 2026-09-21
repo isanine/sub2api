@@ -160,3 +160,15 @@ func TestCodexTicketDemoteThresholdRuntimeOverride(t *testing.T) {
 	svc.captureOpenAICodexTicketFromResponse(account, "gpt-6-astra", missResponse())
 	require.Equal(t, []int64{41}, demoted.demoted)
 }
+
+func TestCodexTicketOverrideStickyRuntimeSetting(t *testing.T) {
+	repo := &codexTicketSettingRepo{codexPolicyMigrationRepoStub: &codexPolicyMigrationRepoStub{values: map[string]string{}}}
+	settings := NewSettingService(repo, &config.Config{})
+	require.False(t, settings.GetOpenAICodexTicketOverrideSticky(t.Context(), false))
+	repo.values[SettingKeyOpenAICodexTicketOverrideSticky] = "true"
+	settings.InvalidateOpenAICodexTicketOverrideStickyCache()
+	require.True(t, settings.GetOpenAICodexTicketOverrideSticky(t.Context(), false))
+	repo.values[SettingKeyOpenAICodexTicketOverrideSticky] = "false"
+	settings.InvalidateOpenAICodexTicketOverrideStickyCache()
+	require.False(t, settings.GetOpenAICodexTicketOverrideSticky(t.Context(), true))
+}

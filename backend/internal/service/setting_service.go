@@ -138,6 +138,8 @@ type SettingService struct {
 	openAICodexTicketTeamSF            singleflight.Group
 	openAICodexTicketDemoteThresholdCache atomic.Value // *cachedOpenAICodexTicketDemoteThreshold
 	openAICodexTicketDemoteThresholdSF    singleflight.Group
+	openAICodexTicketOverrideStickyCache  atomic.Value // *cachedOpenAICodexTicketScopeEnabled
+	openAICodexTicketOverrideStickySF     singleflight.Group
 	codexRestrictionPolicyCache        atomic.Value // *cachedCodexRestrictionPolicy
 	codexRestrictionPolicySF           singleflight.Group
 

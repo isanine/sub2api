@@ -4565,6 +4565,20 @@
                       class="input mt-2 w-40"
                     />
                   </div>
+                  <div class="flex items-center justify-between gap-4">
+                    <div class="min-w-0">
+                      <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+                        {{ t("admin.settings.gatewayForwarding.codexTicketOverrideSticky") }}
+                      </h4>
+                      <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t("admin.settings.gatewayForwarding.codexTicketOverrideStickyDesc") }}
+                      </p>
+                    </div>
+                    <Toggle
+                      id="codex-ticket-override-sticky"
+                      v-model="form.openai_codex_ticket_override_sticky"
+                    />
+                  </div>
                 </div>
                 <div>
                   <h3 class="text-base font-semibold text-gray-900 dark:text-white">
@@ -9909,6 +9923,7 @@ const form = reactive<SettingsForm>({
   openai_codex_ticket_personal_enabled: true,
   openai_codex_ticket_team_enabled: true,
   openai_codex_ticket_demote_threshold: 100,
+  openai_codex_ticket_override_sticky: false,
   // codex_cli_only 加固
   min_codex_version: "",
   max_codex_version: "",
@@ -11519,6 +11534,7 @@ async function saveSettings() {
       openai_codex_ticket_personal_enabled: form.openai_codex_ticket_personal_enabled,
       openai_codex_ticket_team_enabled: form.openai_codex_ticket_team_enabled,
       openai_codex_ticket_demote_threshold: Number(form.openai_codex_ticket_demote_threshold) || 0,
+      openai_codex_ticket_override_sticky: form.openai_codex_ticket_override_sticky,
       min_codex_version: form.min_codex_version?.trim() || "",
       max_codex_version: form.max_codex_version?.trim() || "",
       codex_cli_only_allow_app_server_clients:

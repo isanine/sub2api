@@ -555,6 +555,10 @@ export default {
         codexTicketDemoteThreshold: "Auto demote threshold",
         codexTicketDemoteThresholdDesc:
           "After this many consecutive misses with no valid ticket on any gated model, the account's priority is bumped once (scheduled later). A capture resets the counter; 0 disables auto demotion. Default 100.",
+        codexTicketOverrideSticky: "Ticketed accounts override session stickiness",
+        codexTicketOverrideStickyDesc:
+          "When on, a gated-model request whose sticky account has no valid ticket will drop the sticky hit and be scheduled only among accounts that hold a valid ticket (if none holds one, scheduling is unchanged and nothing is blocked).",
+
         codexClientRestrictionTitle: "Codex client restriction",
         codexHardeningDesc:
           "Only affects OpenAI OAuth accounts with 'Codex official clients only' enabled (global). Beyond User-Agent/Originator, harden the decision with a version range, an engine-fingerprint gate, and black/whitelists.",

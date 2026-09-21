@@ -548,6 +548,9 @@ export default {
         codexTicketDemoteThreshold: '自动降级阈值',
         codexTicketDemoteThresholdDesc:
           '连续未捕获门票达到该次数、且所有门控模型都无有效票时，账号优先级 +1（调度靠后，只降一次）。捕获成功计数清零；0 表示关闭自动降级。默认 100。',
+        codexTicketOverrideSticky: '有票账号优先于会话粘滞',
+        codexTicketOverrideStickyDesc:
+          '开启后，门控模型的请求若粘滞账号没有有效门票、而候选中存在有票账号，则放弃粘滞命中并只在有票账号中选择（无任何有票账号时保持原调度，不拦截请求）。',
         codexClientRestrictionTitle: 'Codex 客户端限制',
         codexHardeningDesc:
           '仅对已开启「仅允许 Codex 官方客户端」的 OpenAI OAuth 账号生效（全局）。在 User-Agent/Originator 之外，用版本区间、引擎指纹门与黑/白名单巩固判定。',

@@ -337,6 +337,10 @@ gateway:
     # 每个账号只自动降一次，不重复降；捕获成功即清零计数。0 = 关闭自动降级。
     # Env: GATEWAY_OPENAI_CODEX_TICKET_PRIORITY_DEMOTE_THRESHOLD=100
     priority_demote_threshold: 100
+    # 有票账号优先于会话粘滞：门控模型请求粘住的账号无有效票、而候选中存在
+    # 有票账号时，放弃粘滞命中并只在有票账号中选择。默认关闭。
+    # Env: GATEWAY_OPENAI_CODEX_TICKET_OVERRIDE_STICKY=true
+    override_sticky: false
     ttl_seconds: 3600
     models:
       - gpt-6-astra

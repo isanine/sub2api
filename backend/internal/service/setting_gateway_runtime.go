@@ -487,6 +487,21 @@ func (s *SettingService) InvalidateOpenAICodexTicketDemoteThresholdCache() {
 	s.openAICodexTicketDemoteThresholdCache.Store(&cachedOpenAICodexTicketDemoteThreshold{expiresAt: 0})
 }
 
+// GetOpenAICodexTicketOverrideSticky 返回「有票账号优先于会话粘滞」开关；
+// 缺失时回退 yaml（默认 false）。
+func (s *SettingService) GetOpenAICodexTicketOverrideSticky(ctx context.Context, fallback bool) bool {
+	return s.getOpenAICodexTicketScopeEnabled(ctx, SettingKeyOpenAICodexTicketOverrideSticky,
+		&s.openAICodexTicketOverrideStickyCache, &s.openAICodexTicketOverrideStickySF, fallback)
+}
+
+func (s *SettingService) InvalidateOpenAICodexTicketOverrideStickyCache() {
+	if s == nil {
+		return
+	}
+	s.openAICodexTicketOverrideStickySF.Forget(SettingKeyOpenAICodexTicketOverrideSticky)
+	s.openAICodexTicketOverrideStickyCache.Store(&cachedOpenAICodexTicketScopeEnabled{expiresAt: 0})
+}
+
 // GetOpenAICodexUserAgent 返回 OpenAI Codex 上游请求使用的 User-Agent。
 // 后台设置优先；为空时回退到内置默认值。
 func (s *SettingService) GetOpenAICodexUserAgent(ctx context.Context) string {

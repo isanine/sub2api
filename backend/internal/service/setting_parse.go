@@ -929,6 +929,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 			result.OpenAICodexTicketDemoteThreshold = n
 		}
 	}
+	if v, ok := settings[SettingKeyOpenAICodexTicketOverrideSticky]; ok && v != "" {
+		result.OpenAICodexTicketOverrideSticky = v == "true"
+	} else if s != nil && s.cfg != nil {
+		result.OpenAICodexTicketOverrideSticky = s.cfg.Gateway.OpenAICodexTicket.OverrideSticky
+	}
 	// codex_cli_only 加固
 	result.MinCodexVersion = settings[SettingKeyMinCodexVersion]
 	result.MaxCodexVersion = settings[SettingKeyMaxCodexVersion]

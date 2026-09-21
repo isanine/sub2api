@@ -193,6 +193,54 @@ func (s *OpenAIGatewayService) openAICodexTicketDemoteThreshold() int {
 	return s.settingService.GetOpenAICodexTicketDemoteThreshold(context.Background(), fallback)
 }
 
+// openAICodexTicketOverridesSticky 「有票账号优先于会话粘滞」开关：
+// 后台设置（热更新）优先，缺失回退 yaml（默认 false）。
+func (s *OpenAIGatewayService) openAICodexTicketOverridesSticky() bool {
+	fallback := s != nil && s.cfg != nil && s.cfg.Gateway.OpenAICodexTicket.OverrideSticky
+	if s == nil || s.settingService == nil {
+		return fallback
+	}
+	return s.settingService.GetOpenAICodexTicketOverrideSticky(context.Background(), fallback)
+}
+
+// openAICodexTicketOutboundModel 预测本请求真正出站的模型名，也就是
+// applyOpenAICodexTicket 注入时读到的 body.model。调度判定与注入必须按同
+// 一个模型名口径，否则模型映射（如 compact）会造成两侧判定不一致。
+func (s *OpenAIGatewayService) openAICodexTicketOutboundModel(account *Account, requestedModel string, requireCompact bool) string {
+	model := strings.TrimSpace(requestedModel)
+	if account == nil || model == "" {
+		return model
+	}
+	if !account.IsOpenAI() {
+		return canonicalOpenAIAccountSchedulingModel(account, model)
+	}
+	_, upstreamModel := resolveOpenAIForwardMappedModels(account, model, requireCompact)
+	if requireCompact {
+		// 与 Forward 同序：compact 兜底模型优先于普通/compact 映射结果。
+		if compactModel := strings.TrimSpace(s.resolveOpenAICompactFallbackModel(account, model)); compactModel != "" {
+			upstreamModel = compactModel
+		}
+	}
+	if upstreamModel = strings.TrimSpace(upstreamModel); upstreamModel != "" {
+		return upstreamModel
+	}
+	return model
+}
+
+// openAIAccountHasValidCodexTicket 判定账号对该请求模型是否持有有效门票
+// （按出站模型映射与个人/Team 细分开关判定）。
+func (s *OpenAIGatewayService) openAIAccountHasValidCodexTicket(ctx context.Context, account *Account, requestedModel string) bool {
+	if s == nil || !isOpenAICodexTicketAccount(account) || !s.openAICodexTicketScopeEnabledContext(ctx, account) {
+		return false
+	}
+	outbound := s.openAICodexTicketOutboundModel(account, requestedModel, false)
+	if !s.openAICodexTicketGatedModel(outbound) {
+		return false
+	}
+	cfg := s.openAICodexTicketConfig()
+	return s.lookupOpenAICodexTicket(account, outbound).valid(time.Now(), openAICodexTicketTargetLength(account, cfg.TargetLength))
+}
+
 func (t *openAICodexTicket) valid(now time.Time, targetLen int) bool {
 	if t == nil {
 		return false

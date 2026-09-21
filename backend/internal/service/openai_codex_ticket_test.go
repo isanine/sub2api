@@ -477,3 +477,34 @@ func TestCaptureOpenAICodexTicket_PromotesOncePerAccount(t *testing.T) {
 	svc.captureOpenAICodexTicketFromResponse(top, "gpt-6-astra", captureResponseHeader(292))
 	require.Len(t, repo.promoted, 1)
 }
+
+// ————— 有票账号优先于会话粘滞 —————
+
+func TestOpenAIAccountHasValidCodexTicket(t *testing.T) {
+	svc := ticketTestService(t, config.OpenAICodexTicketConfig{
+		Enabled: true, TargetLength: 292, TTLSeconds: 3600, Models: []string{"gpt-6-astra"}, OverrideSticky: true,
+	})
+	withTicket := ticketTestAccount(41)
+	storeTestTicket(svc, withTicket, "gpt-6-astra", 292)
+	noTicket := ticketTestAccount(42)
+
+	require.True(t, svc.openAIAccountHasValidCodexTicket(context.Background(), withTicket, "gpt-6-astra"))
+	require.False(t, svc.openAIAccountHasValidCodexTicket(context.Background(), noTicket, "gpt-6-astra"))
+	// 非门控模型：不视为有票。
+	require.False(t, svc.openAIAccountHasValidCodexTicket(context.Background(), withTicket, "gpt-5.5"))
+	// 开关关：一律不触发调度改写。
+	off := ticketTestService(t, config.OpenAICodexTicketConfig{
+		Enabled: true, TargetLength: 292, Models: []string{"gpt-6-astra"}, OverrideSticky: false,
+	})
+	storeTestTicket(off, withTicket, "gpt-6-astra", 292)
+	require.False(t, off.openAICodexTicketOverridesSticky())
+	require.True(t, svc.openAICodexTicketOverridesSticky())
+	// 细分开关关的账号（Team 关闭）不参与。
+	teamOff := ticketTestService(t, config.OpenAICodexTicketConfig{
+		Enabled: true, TargetLength: 292, Models: []string{"gpt-6-astra"}, EnabledTeam: boolPtrForTest(false), OverrideSticky: true,
+	})
+	team := ticketTestAccount(43)
+	team.Credentials["plan_type"] = "team"
+	storeTestTicket(teamOff, team, "gpt-6-astra", 332)
+	require.False(t, teamOff.openAIAccountHasValidCodexTicket(context.Background(), team, "gpt-6-astra"))
+}

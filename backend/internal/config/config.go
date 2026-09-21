@@ -1232,6 +1232,9 @@ type OpenAICodexTicketConfig struct {
 	// PriorityDemoteThreshold 连续未捕获门票达到该次数且所有门控模型都无
 	// 有效票时，账号优先级 +1（数值越大越靠后，只降一次）。0 = 关闭自动降级。
 	PriorityDemoteThreshold int `mapstructure:"priority_demote_threshold"`
+	// OverrideSticky 有票账号优先于会话粘滞：门控模型请求粘住的账号无有效票、
+	// 而候选里存在有票账号时，放弃粘滞命中并只在有票账号中选择。默认关闭。
+	OverrideSticky bool `mapstructure:"override_sticky"`
 	// EnabledPersonal / EnabledTeam 细分打票范围：总开关 enabled 开启后，
 	// 个人号 / Team 号可独立启停。nil = 跟随总开关（默认开启），与历史行为兼容。
 	EnabledPersonal *bool `mapstructure:"enabled_personal"`
@@ -2417,6 +2420,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_codex_ticket.target_length", 292)
 	viper.SetDefault("gateway.openai_codex_ticket.ttl_seconds", 3600)
 	viper.SetDefault("gateway.openai_codex_ticket.priority_demote_threshold", 100)
+	viper.SetDefault("gateway.openai_codex_ticket.override_sticky", false)
 	viper.SetDefault("gateway.openai_codex_ticket.models", []string{"gpt-6-astra", "gpt-5.6-sol"})
 	viper.SetDefault("gateway.live.max_session_duration_seconds", 3600)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）

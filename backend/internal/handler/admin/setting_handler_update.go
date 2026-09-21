@@ -261,6 +261,7 @@ type UpdateSettingsRequest struct {
 	OpenAICodexTicketPersonalEnabled       *bool   `json:"openai_codex_ticket_personal_enabled"`
 	OpenAICodexTicketTeamEnabled           *bool   `json:"openai_codex_ticket_team_enabled"`
 	OpenAICodexTicketDemoteThreshold       *int    `json:"openai_codex_ticket_demote_threshold"`
+	OpenAICodexTicketOverrideSticky        *bool   `json:"openai_codex_ticket_override_sticky"`
 
 	// codex_cli_only 加固（global-only）
 	MinCodexVersion                      string `json:"min_codex_version"`
@@ -1796,6 +1797,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAICodexTicketDemoteThreshold
 		}(),
+		OpenAICodexTicketOverrideSticky: func() bool {
+			if req.OpenAICodexTicketOverrideSticky != nil {
+				return *req.OpenAICodexTicketOverrideSticky
+			}
+			return previousSettings.OpenAICodexTicketOverrideSticky
+		}(),
 		MinCodexVersion:       strings.TrimSpace(req.MinCodexVersion),
 		MaxCodexVersion:       strings.TrimSpace(req.MaxCodexVersion),
 		CodexCLIOnlyBlacklist: strings.TrimSpace(req.CodexCLIOnlyBlacklist),
@@ -2342,6 +2349,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OpenAICodexTicketPersonalEnabled:                       updatedSettings.OpenAICodexTicketPersonalEnabled,
 		OpenAICodexTicketTeamEnabled:                           updatedSettings.OpenAICodexTicketTeamEnabled,
 		OpenAICodexTicketDemoteThreshold:                       updatedSettings.OpenAICodexTicketDemoteThreshold,
+		OpenAICodexTicketOverrideSticky:                        updatedSettings.OpenAICodexTicketOverrideSticky,
 		MinCodexVersion:                                        updatedSettings.MinCodexVersion,
 		MaxCodexVersion:                                        updatedSettings.MaxCodexVersion,
 		CodexCLIOnlyBlacklist:                                  updatedSettings.CodexCLIOnlyBlacklist,

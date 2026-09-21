@@ -561,6 +561,12 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		clearBinding()
 		return nil, false, nil
 	}
+	// 票务优先于粘滞（开关控制）：粘住的账号对门控模型没有有效门票时放弃
+	// 粘滞命中，让负载均衡层在有票账号中选择。
+	if s.service.openAICodexTicketOverridesSticky() && s.service.openAICodexTicketGatedModel(req.RequestedModel) &&
+		!s.service.openAIAccountHasValidCodexTicket(ctx, account, req.RequestedModel) {
+		return nil, false, nil
+	}
 	escapeCfg := s.service.openAIStickyEscapeConfig()
 	if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccount(accountID, escapeCfg); shouldEscape && !req.DisableStickyEscape {
 		slog.Info("sticky_escape_triggered",
@@ -1484,6 +1490,20 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 	if len(filtered) == 0 {
 		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, filterStats.summary(""))
+	}
+
+	// 票务优先（开关控制）：门控模型存在有票候选时只在有票账号中负载均衡，
+	// 无任何有票候选则保持原候选池（不拦截请求）。
+	if s.service.openAICodexTicketOverridesSticky() && s.service.openAICodexTicketGatedModel(req.RequestedModel) {
+		withTicket := make([]*Account, 0, len(filtered))
+		for _, account := range filtered {
+			if s.service.openAIAccountHasValidCodexTicket(ctx, account, req.RequestedModel) {
+				withTicket = append(withTicket, account)
+			}
+		}
+		if len(withTicket) > 0 {
+			filtered = withTicket
+		}
 	}
 
 	loadMap := map[int64]*AccountLoadInfo{}

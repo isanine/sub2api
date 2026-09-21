@@ -720,6 +720,8 @@ const (
 	// SettingKeyOpenAICodexTicketDemoteThreshold 连续未捕获门票自动降级的阈值
 	//（次数，0 = 关闭自动降级）。缺失时回退 yaml priority_demote_threshold。
 	SettingKeyOpenAICodexTicketDemoteThreshold = "openai_codex_ticket_demote_threshold"
+	// SettingKeyOpenAICodexTicketOverrideSticky 有票账号优先于会话粘滞（默认 false）。
+	SettingKeyOpenAICodexTicketOverrideSticky = "openai_codex_ticket_override_sticky"
 	// SettingKeyOpenAIAllowClaudeCodeCodexPlugin 已废弃：历史全局开关只作为升级迁移输入读取。
 	// 迁移后等价规则写入 SettingKeyCodexCLIOnlyWhitelist，不再参与运行时判定。
 	SettingKeyOpenAIAllowClaudeCodeCodexPlugin = "openai_allow_claude_code_codex_plugin"
