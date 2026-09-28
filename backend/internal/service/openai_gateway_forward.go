@@ -19,9 +19,6 @@ import (
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
-	// BPS 封禁到期的 Team 账号：进入请求前先探测，成功则解封并恢复优先级。
-	s.openAIBPSMaybeRecheck(ctx, account)
-
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
@@ -1229,8 +1226,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		// BPS 路由的流式响应：包一层 SSE 改写器，把 run_officejs 调用还原为
 		// 客户端 function_call 事件，下游处理（用量解析 / 模型回写）无感。
-		if bpsState.routed && reqStream {
-			resp.Body = s.bpsWrapResponseBody(resp.Body, bpsState, originalModel)
+		// 2xx 即视为 BPS 可用：恢复健康度，曾降级的还原优先级。
+		if bpsState.routed {
+			s.openAIBPSHandleSuccess(ctx, account)
+			if reqStream {
+				resp.Body = s.bpsWrapResponseBody(resp.Body, bpsState, originalModel)
+			}
 		}
 
 		// Handle normal response

@@ -561,6 +561,11 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		clearBinding()
 		return nil, false, nil
 	}
+	// BPS 可用的账号优先级最高，高于会话粘滞：粘住的 Team 账号 BPS 当前
+	// 不可用（最近一次 403）时放弃粘滞命中，交给负载均衡在有可用账号时选它。
+	if s.service.openAIBPSRoutedFor(account) && !s.service.openAIBPSAvailable(account) {
+		return nil, false, nil
+	}
 	escapeCfg := s.service.openAIStickyEscapeConfig()
 	if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccount(accountID, escapeCfg); shouldEscape && !req.DisableStickyEscape {
 		slog.Info("sticky_escape_triggered",
@@ -1484,6 +1489,20 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 	if len(filtered) == 0 {
 		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, filterStats.summary(""))
+	}
+
+	// BPS 可用的账号调度优先级最高（高于粘滞）：候选里存在 BPS 可用的
+	// Team 账号时只在其中负载均衡；没有任何可用账号则保持原候选池。
+	if s.service.openAIBPSEnabled() {
+		bpsAvailable := make([]*Account, 0, len(filtered))
+		for _, account := range filtered {
+			if s.service.openAIBPSAvailable(account) {
+				bpsAvailable = append(bpsAvailable, account)
+			}
+		}
+		if len(bpsAvailable) > 0 {
+			filtered = bpsAvailable
+		}
 	}
 
 	loadMap := map[int64]*AccountLoadInfo{}

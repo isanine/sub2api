@@ -509,9 +509,12 @@ type OpenAIGatewayService struct {
 	openaiCodexTurnStateOrigins sync.Map
 	openaiCodexTurnStateWrites  atomic.Uint64
 
-	// BPS 代理（Team 账号 → bps.openai.com）的调用记忆，惰性初始化。
+	// BPS 代理（Team 账号 → bps.openai.com）的调用记忆与健康度，惰性初始化。
 	openAIBPSMemoryOnce  sync.Once
 	openAIBPSMemoryState *bpsCallMemory
+	openAIBPSHealthOnce  sync.Once
+	openAIBPSHealthMu    sync.Mutex
+	openAIBPSHealthState map[int64]bpsHealth
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService

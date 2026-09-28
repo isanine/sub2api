@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
@@ -186,8 +185,8 @@ func TestBPSSSEReader(t *testing.T) {
 	require.Contains(t, text, "output_text")
 }
 
-// 账号状态机：路由判定 + 403 封禁/到期。
-func TestBPSRoutedDecisionAndBlockState(t *testing.T) {
+// 账号状态机：路由判定 + 403 降级 / 成功恢复（不封禁）。
+func TestBPSRoutedDecision(t *testing.T) {
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 	svc.cfg.Gateway.OpenBPS.Enabled = true
 
@@ -197,21 +196,39 @@ func TestBPSRoutedDecisionAndBlockState(t *testing.T) {
 	require.False(t, bpsIsTeamAccount(personal))
 	require.True(t, svc.openAIBPSRoutedFor(team))
 	require.False(t, svc.openAIBPSRoutedFor(personal), "仅 Team 账号")
-
-	// 封禁中：不走 BPS。
-	blocked := bpsTestAccount(43, "team")
-	blocked.Extra = map[string]any{bpsBlockedExtraKey: time.Now().Add(time.Hour).Format(time.RFC3339)}
-	require.False(t, svc.openAIBPSRoutedFor(blocked))
-
-	// 到期：可探测。
-	expired := bpsTestAccount(44, "team")
-	expired.Extra = map[string]any{bpsBlockedExtraKey: time.Now().Add(-time.Minute).Format(time.RFC3339)}
-	require.False(t, svc.openAIBPSAccountBlocked(expired))
-	require.True(t, svc.openAIBPSBlockedUntilExpired(expired))
-
-	// 开关关：一律不走。
+	// 无健康记录：可用（乐观）。
+	require.True(t, svc.openAIBPSAvailable(team))
+	// 开关关：一律不可用。
 	svc.cfg.Gateway.OpenBPS.Enabled = false
 	require.False(t, svc.openAIBPSRoutedFor(team))
+	require.False(t, svc.openAIBPSAvailable(team))
+}
+
+// 403 → 不可用 + 降级；成功 → 恢复可用 + 还原优先级。
+func TestBPSHealthDemoteAndRestore(t *testing.T) {
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	svc.cfg.Gateway.OpenBPS.Enabled = true
+	repo := &bpsBlockRecorderRepo{}
+	svc.accountRepo = repo
+	team := bpsTestAccount(41, "team")
+
+	require.True(t, svc.openAIBPSAvailable(team))
+	svc.openAIBPSHandle403(context.Background(), team)
+	require.False(t, svc.openAIBPSAvailable(team), "403 后调度不再偏好")
+	require.Equal(t, []int64{41}, repo.blocked)
+
+	// 再次 403：健康度更新，但成功前不重复触发（repo 层标记保证一次性）。
+	svc.openAIBPSHandle403(context.Background(), team)
+	require.Len(t, repo.blocked, 2) // 服务层每次都调，repo 原子保证只降一次
+
+	// 成功：恢复可用 + 还原优先级。
+	svc.openAIBPSHandleSuccess(context.Background(), team)
+	require.True(t, svc.openAIBPSAvailable(team))
+	require.Equal(t, []int64{41}, repo.unblocked)
+
+	// 持续成功不再触发还原。
+	svc.openAIBPSHandleSuccess(context.Background(), team)
+	require.Len(t, repo.unblocked, 1)
 }
 
 // 403 处理器调用仓储接口（窄接口断言，mock 实现同一方法）。
@@ -221,31 +238,14 @@ type bpsBlockRecorderRepo struct {
 	unblocked []int64
 }
 
-func (r *bpsBlockRecorderRepo) BlockOpenBPSAccount(ctx context.Context, accountID int64, until time.Time) (bool, error) {
+func (r *bpsBlockRecorderRepo) DemoteOpenBPSAccount(ctx context.Context, accountID int64) (bool, error) {
 	r.blocked = append(r.blocked, accountID)
 	return true, nil
 }
 
-func (r *bpsBlockRecorderRepo) UnblockOpenBPSAccount(ctx context.Context, accountID int64) (bool, error) {
+func (r *bpsBlockRecorderRepo) RestoreOpenBPSAccount(ctx context.Context, accountID int64) (bool, error) {
 	r.unblocked = append(r.unblocked, accountID)
 	return true, nil
-}
-
-func TestBPSHandle403AndRecheckRecovery(t *testing.T) {
-	svc := &OpenAIGatewayService{cfg: &config.Config{}}
-	svc.cfg.Gateway.OpenBPS.Enabled = true
-	repo := &bpsBlockRecorderRepo{}
-	svc.accountRepo = repo
-	team := bpsTestAccount(41, "team")
-
-	svc.openAIBPSHandle403(context.Background(), team)
-	require.Equal(t, []int64{41}, repo.blocked)
-
-	// 无传输层（未真正探测）：不续封，保持 [41]。
-	expired := bpsTestAccount(42, "team")
-	expired.Extra = map[string]any{bpsBlockedExtraKey: time.Now().Add(-time.Minute).Format(time.RFC3339)}
-	require.False(t, svc.openAIBPSRecheck(context.Background(), expired))
-	require.Equal(t, []int64{41}, repo.blocked)
 }
 
 // buildUpstreamRequest 的 BPS 改写：URL / Host / 身份头。
@@ -271,4 +271,22 @@ func TestOpenABPSEnabledSetting(t *testing.T) {
 	svc.cfg.Gateway.OpenBPS.Enabled = true
 	require.True(t, svc.openAIBPSEnabled())
 	var _ = json.Marshal
+}
+
+func TestBPSToolOutputEmptyIDGuard(t *testing.T) {
+	output := bpsToolOutputItem(map[string]any{
+		"type": "function_call_output", "call_id": "call_9", "id": "", "output": "ok",
+	}, nil)
+	_, hasID := output["id"]
+	require.False(t, hasID, "空 id 不应写入")
+	require.Equal(t, "ok", output["output"])
+
+	// 非空 id 正常映射。
+	output2 := bpsToolOutputItem(map[string]any{
+		"type": "function_call_output", "call_id": "call_9", "id": "ctco_abc", "output": "ok",
+	}, nil)
+	require.Equal(t, "fc_abc", output2["id"])
+
+	// bpsFCItemID 空串原样返回。
+	require.Equal(t, "", bpsFCItemID(""))
 }

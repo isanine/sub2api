@@ -39,8 +39,6 @@ const (
 	bpsTransportTool   = "run_officejs"
 	bpsDefaultModel    = "gpt-5.6-sol"
 	bpsOfficeOK        = `{"status":"ok"}`
-	bpsBlockDuration   = time.Hour
-	bpsBlockedExtraKey = "bps_blocked_until"
 	bpsDemotedExtraKey = "bps_priority_demoted"
 )
 
@@ -661,7 +659,7 @@ func bpsStripPrivate(item map[string]any) map[string]any {
 
 func bpsFCItemID(itemID any) any {
 	s, ok := itemID.(string)
-	if !ok || strings.HasPrefix(s, "fc") {
+	if !ok || s == "" || strings.HasPrefix(s, "fc") {
 		return itemID
 	}
 	for _, prefix := range []string{"ctco_", "ctc_"} {
@@ -694,11 +692,12 @@ func bpsToolOutputItem(item map[string]any, native map[string]any) map[string]an
 		kind = "custom_tool_call_output"
 	}
 	rewritten := map[string]any{"type": kind, "call_id": item["call_id"], "output": output}
-	if id, ok := item["id"].(string); ok {
+	// 空 id 不写入：拼出来的 "fc_" 会被上游 400 拒绝（Invalid input id）。
+	if id, ok := item["id"].(string); ok && strings.TrimSpace(id) != "" {
 		if custom {
 			rewritten["id"] = id
-		} else {
-			rewritten["id"] = bpsFCItemID(id)
+		} else if mapped, isStr := bpsFCItemID(id).(string); isStr && mapped != "" {
+			rewritten["id"] = mapped
 		}
 	}
 	return rewritten
@@ -1594,7 +1593,7 @@ func (r *bpsSSEReader) rewriteModelNames(body map[string]any) {
 	}
 }
 
-// ————— 账号状态与路由判定 —————
+// ————— 账号状态、健康度与路由判定 —————
 
 // bpsIsTeamAccount 判定是否 Team/Business workspace 账号（plan_type 含
 // team / business / enterprise）。BPS 代理仅对这类账号启用。
@@ -1626,135 +1625,112 @@ func (s *OpenAIGatewayService) openAIBPSEnabled() bool {
 	return s.settingService.GetOpenABPSEnabled(context.Background(), fallback)
 }
 
-// openAIBPSRoutedFor 判定该请求是否走 BPS：开关开 + Team 账号 + 未被封禁。
-// blocked 时返回 false（走常规 chatgpt.com 路径），不阻塞请求。
+// openAIBPSRoutedFor 判定该请求是否走 BPS：开关开 + Team 账号。
+// 403 不封禁账号（只降优先级 +2），由调度偏好与健康度自然调节流量，
+// 下次成功即自动恢复优先级。
 func (s *OpenAIGatewayService) openAIBPSRoutedFor(account *Account) bool {
 	if s == nil || !s.openAIBPSEnabled() {
 		return false
 	}
-	if !bpsIsTeamAccount(account) || !bpsIsOAuthLikeAccount(account) {
-		return false
-	}
-	return !s.openAIBPSAccountBlocked(account)
+	return bpsIsTeamAccount(account) && bpsIsOAuthLikeAccount(account)
 }
 
-// openAIBPSAccountBlocked 读取账号 extra 里的封禁截止时间。
-func (s *OpenAIGatewayService) openAIBPSAccountBlocked(account *Account) bool {
-	if account == nil || account.Extra == nil {
-		return false
-	}
-	raw, _ := account.Extra[bpsBlockedExtraKey].(string)
-	if raw == "" {
-		return false
-	}
-	until, err := time.Parse(time.RFC3339, raw)
-	if err != nil {
-		return false
-	}
-	return time.Now().Before(until)
+// bpsHealth 记录账号 BPS 最近一次成功 / 403 时间，驱动调度偏好。
+type bpsHealth struct {
+	lastOK  time.Time
+	last403 time.Time
 }
 
-// openAIBPSBlockedUntilExpired 封禁已到期（需要探测恢复）。
-func (s *OpenAIGatewayService) openAIBPSBlockedUntilExpired(account *Account) bool {
-	if account == nil || account.Extra == nil {
-		return false
-	}
-	raw, _ := account.Extra[bpsBlockedExtraKey].(string)
-	if raw == "" {
-		return false
-	}
-	until, err := time.Parse(time.RFC3339, raw)
-	if err != nil {
-		return false
-	}
-	return !time.Now().Before(until)
+func (s *OpenAIGatewayService) bpsHealthMap() map[int64]bpsHealth {
+	s.openAIBPSHealthOnce.Do(func() {
+		s.openAIBPSHealthState = map[int64]bpsHealth{}
+	})
+	return s.openAIBPSHealthState
 }
 
-// openAIBPSHandle403 上游 BPS 返回 403：封禁 1 小时 + 优先级 +2（一次性）。
+// openAIBPSAvailable 账号当前 BPS 是否可用：Team + 开关开，且最近一次
+// 结果不是 403（成功后恢复）。无记录视为可用（乐观，403 会迅速纠正）。
+// 「BPS 可用的账号调度优先级最高，高于会话粘滞。」
+func (s *OpenAIGatewayService) openAIBPSAvailable(account *Account) bool {
+	if s == nil || account == nil || !s.openAIBPSRoutedFor(account) {
+		return false
+	}
+	s.openAIBPSHealthMu.Lock()
+	defer s.openAIBPSHealthMu.Unlock()
+	h, exists := s.bpsHealthMap()[account.ID]
+	if !exists {
+		return true
+	}
+	return !h.lastOK.Before(h.last403)
+}
+
+func (s *OpenAIGatewayService) noteOpenBPSResult(accountID int64, ok bool) {
+	now := time.Now()
+	s.openAIBPSHealthMu.Lock()
+	defer s.openAIBPSHealthMu.Unlock()
+	m := s.bpsHealthMap()
+	h := m[accountID]
+	if ok {
+		h.lastOK = now
+	} else {
+		h.last403 = now
+	}
+	m[accountID] = h
+}
+
+// openAIBPSHandle403 上游 BPS 返回 403：记录健康度 + 优先级 +2（一次性）。
+// 不封禁：后续请求仍可走 BPS，成功后自动恢复。
 func (s *OpenAIGatewayService) openAIBPSHandle403(ctx context.Context, account *Account) {
-	if s == nil || account == nil || s.accountRepo == nil {
+	if s == nil || account == nil {
+		return
+	}
+	s.noteOpenBPSResult(account.ID, false)
+	if s.accountRepo == nil {
 		return
 	}
 	if repo, ok := s.accountRepo.(interface {
-		BlockOpenBPSAccount(ctx context.Context, accountID int64, until time.Time) (bool, error)
+		DemoteOpenBPSAccount(ctx context.Context, accountID int64) (bool, error)
 	}); ok {
-		blocked, err := repo.BlockOpenBPSAccount(ctx, account.ID, time.Now().Add(bpsBlockDuration))
+		demoted, err := repo.DemoteOpenBPSAccount(ctx, account.ID)
 		if err != nil {
-			logger.L().Warn("openai_bps block account failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			logger.L().Warn("openai_bps demote failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			return
 		}
-		if blocked {
-			logger.L().Info("openai_bps account blocked by 403",
-				zap.Int64("account_id", account.ID),
-				zap.String("blocked_until", time.Now().Add(bpsBlockDuration).Format(time.RFC3339)),
-				zap.String("action", "priority +2, retry after 1h"),
-			)
+		if demoted {
+			logger.L().Info("openai_bps account got 403, priority +2 (auto restore on next success)",
+				zap.Int64("account_id", account.ID))
 		}
 	}
 }
 
-// openAIBPSRecheck 封禁到期后的探测：成功 → 解封 + 还原优先级；失败 → 续封 1 小时。
-// 返回 true 表示恢复成功（本次请求可走 BPS）。
-func (s *OpenAIGatewayService) openAIBPSRecheck(ctx context.Context, account *Account) bool {
-	if s == nil || account == nil || s.httpUpstream == nil {
-		return false
+// openAIBPSHandleSuccess BPS 请求成功：恢复健康度；若曾因 403 降级则优先级 -2（一次性）。
+func (s *OpenAIGatewayService) openAIBPSHandleSuccess(ctx context.Context, account *Account) {
+	if s == nil || account == nil {
+		return
 	}
-	token, _, err := s.GetAccessToken(ctx, account)
-	if err != nil || strings.TrimSpace(token) == "" {
-		return false
+	needRestore := false
+	s.openAIBPSHealthMu.Lock()
+	if h, exists := s.bpsHealthMap()[account.ID]; exists && !h.last403.IsZero() && h.lastOK.Before(h.last403) {
+		needRestore = true
 	}
-	probeBody := []byte(`{"model":"` + bpsDefaultModel + `","model_selection":"explicit","stream":true,"store":false,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"ping"}]}],"reasoning_effort":"low"}`)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, bpsResponsesURL, bytes.NewReader(probeBody))
-	if err != nil {
-		return false
+	s.openAIBPSHealthMu.Unlock()
+	s.noteOpenBPSResult(account.ID, true)
+	if !needRestore || s.accountRepo == nil {
+		return
 	}
-	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
-	req.Close = true
-	req.Host = "bps.openai.com"
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	applyOpenBPSIdentityHeaders(req.Header)
-	if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, req.Header, account); err != nil {
-		return false
-	}
-	probeCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-	defer cancel()
-	req = req.WithContext(probeCtx)
-	resp, err := s.httpUpstream.Do(req, "", account.ID, account.Concurrency)
-	if err != nil || resp == nil {
-		s.extendOpenBPSBlock(ctx, account)
-		return false
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusOK {
-		if repo, ok := s.accountRepo.(interface {
-			UnblockOpenBPSAccount(ctx context.Context, accountID int64) (bool, error)
-		}); ok {
-			restored, _ := repo.UnblockOpenBPSAccount(ctx, account.ID)
-			if restored {
-				logger.L().Info("openai_bps account recovered",
-					zap.Int64("account_id", account.ID),
-					zap.String("action", "unblocked, priority restored"),
-				)
-			}
-		}
-		return true
-	}
-	s.extendOpenBPSBlock(ctx, account)
-	return false
-}
-
-func (s *OpenAIGatewayService) extendOpenBPSBlock(ctx context.Context, account *Account) {
 	if repo, ok := s.accountRepo.(interface {
-		BlockOpenBPSAccount(ctx context.Context, accountID int64, until time.Time) (bool, error)
+		RestoreOpenBPSAccount(ctx context.Context, accountID int64) (bool, error)
 	}); ok {
-		_, _ = repo.BlockOpenBPSAccount(ctx, account.ID, time.Now().Add(bpsBlockDuration))
+		restored, err := repo.RestoreOpenBPSAccount(ctx, account.ID)
+		if err != nil {
+			logger.L().Warn("openai_bps restore failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			return
+		}
+		if restored {
+			logger.L().Info("openai_bps account recovered, priority restored",
+				zap.Int64("account_id", account.ID))
+		}
 	}
-	logger.L().Info("openai_bps recheck failed, block extended",
-		zap.Int64("account_id", account.ID),
-		zap.String("blocked_until", time.Now().Add(bpsBlockDuration).Format(time.RFC3339)),
-	)
 }
 
 // applyOpenBPSIdentityHeaders 按 Excel 加载项身份设置请求头。
@@ -1797,19 +1773,6 @@ type bpsRouteState struct {
 }
 
 const bpsRouteStateContextKey = "openai_bps_route_state"
-
-// openAIBPSMaybeRecheck 封禁到期的 Team 账号在请求前探测恢复。
-func (s *OpenAIGatewayService) openAIBPSMaybeRecheck(ctx context.Context, account *Account) {
-	if s == nil || !s.openAIBPSEnabled() || !bpsIsTeamAccount(account) {
-		return
-	}
-	if !s.openAIBPSBlockedUntilExpired(account) {
-		return
-	}
-	recheckCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cancel()
-	s.openAIBPSRecheck(recheckCtx, account)
-}
 
 // openAIBPSScopeKey 以账号 + 会话为记忆隔离域。
 func (s *OpenAIGatewayService) openAIBPSScopeKey(account *Account, source map[string]any) string {
