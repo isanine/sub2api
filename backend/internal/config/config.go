@@ -115,6 +115,12 @@ type SimpleModeConfig struct {
 	AutoCreateDefaultGroups bool `mapstructure:"auto_create_default_groups" yaml:"auto_create_default_groups"`
 }
 
+// OpenBPSConfig 控制 BPS 代理（ChatGPT for Excel 加载项后端）：
+// 仅 Team 账号启用；403 自动封禁 1 小时并降优先级 2，到期探测恢复。
+type OpenBPSConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+}
+
 // PluginConfig 控制管理员手动上传的本地进程插件。
 // 默认不包含插件，也不允许安装未签名插件；TrustedPublishers 用于追加第三方发布者。
 type PluginConfig struct {
@@ -1108,6 +1114,7 @@ type GatewayConfig struct {
 	// CNProviders: 国产 OpenAI 兼容供应商（kimi/zhipu/deepseek）的余额检测配置。
 	// 仅作用于 payg（按量付费）账号：周期探测余额，低于阈值则临时停调。
 	CNProviders GatewayCNProvidersConfig `mapstructure:"cn_providers"`
+	OpenBPS     OpenBPSConfig            `mapstructure:"openai_bps"`
 }
 
 // GatewayGrokConfig holds Grok-specific gateway scheduling knobs.

@@ -19,6 +19,9 @@ import (
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
+	// BPS 封禁到期的 Team 账号：进入请求前先探测，成功则解封并恢复优先级。
+	s.openAIBPSMaybeRecheck(ctx, account)
+
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
@@ -1046,6 +1049,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				upstreamCtx, releaseUpstreamCtx, startTime.Add(firstOutputTimeout),
 			)
 		}
+		// BPS 代理（仅 Team 账号、开关开启）：翻译请求体并把路由状态挂到 gin ctx。
+		bpsRequestBody := s.bpsPrepareRoute(c, account, body, reqStream)
+		if &bpsRequestBody != &body {
+			body = bpsRequestBody
+		}
 		upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, body, token, reqStream, promptCacheKey, isCodexCLI)
 		if headerGuard == nil {
 			releaseUpstreamCtx()
@@ -1092,6 +1100,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		if headerGuard != nil {
 			resp.Body = &openAIRequestContextReadCloser{ReadCloser: resp.Body, cleanup: headerGuard.close}
+		}
+
+		// BPS 路由的 403：封禁该账号 1 小时并降优先级，随后走既有错误路径（failover）。
+		bpsState := bpsRouteStateFrom(c.Get)
+		if bpsState.routed && resp.StatusCode == http.StatusForbidden {
+			s.openAIBPSHandle403(ctx, account)
 		}
 
 		// Handle error response
@@ -1212,6 +1226,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		serviceTier := extractOpenAIServiceTierFromBody(body)
 		// 上游接受后只保留计费需要的标量，避免响应处理期间继续保活完整 input/tools map。
 		reqBody = nil
+
+		// BPS 路由的流式响应：包一层 SSE 改写器，把 run_officejs 调用还原为
+		// 客户端 function_call 事件，下游处理（用量解析 / 模型回写）无感。
+		if bpsState.routed && reqStream {
+			resp.Body = s.bpsWrapResponseBody(resp.Body, bpsState, originalModel)
+		}
 
 		// Handle normal response
 		var usage *OpenAIUsage
@@ -1526,6 +1546,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 
 	if err := applyMappedGPT55LiteCompatibility(req, account, body); err != nil {
 		return nil, err
+	}
+	// BPS 路由（仅 Team 账号）：改写目标端点与身份头，覆盖 Codex 客户端伪装。
+	if bpsState := bpsRouteStateFrom(c.Get); bpsState.routed {
+		s.bpsRewriteUpstreamRequest(req, body, bpsState)
 	}
 	return req, nil
 }

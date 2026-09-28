@@ -559,6 +559,12 @@ export default {
         claudeCodeVersionAutoSync: 'Auto-sync Claude Code version',
         claudeCodeVersionAutoSyncHint: 'Fetches the latest Claude Code client version from the official release channel every hour, so you never need to upgrade this service just to keep the version current. When disabled, fetching stops but the previously synced version remains available. The manual version above always takes priority.',
         claudeCodeVersionSyncedValue: 'Currently synced: {version}',
+        bpsEnabled: "BPS proxy (Team accounts)",
+
+        bpsEnabledDesc:
+
+          "When on, Team/Business accounts route /responses traffic through the ChatGPT for Excel add-in backend (bps.openai.com) with automatic tool bridging. A 403 blocks that account for one hour and lowers its priority by 2; recovery is probed automatically afterwards. Off by default.",
+
         codexHardeningTitle: "Codex Settings",
         codexClientRestrictionTitle: "Codex client restriction",
         codexHardeningDesc:
