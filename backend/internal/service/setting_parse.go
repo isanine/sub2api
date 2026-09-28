@@ -886,6 +886,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	result.AntigravityUserAgentVersion = antigravity.NormalizeUserAgentVersion(settings[SettingKeyAntigravityUserAgentVersion])
 	result.OpenAICodexUserAgent = strings.TrimSpace(settings[SettingKeyOpenAICodexUserAgent])
+	if v, ok := settings[SettingKeyOpenABPSEnabled]; ok && strings.TrimSpace(v) != "" {
+		result.OpenABPSEnabled = strings.TrimSpace(v) == "true"
+	} else if s != nil && s.cfg != nil {
+		result.OpenABPSEnabled = s.cfg.Gateway.OpenBPS.Enabled
+	}
 	result.OpenAICodexClientVersion = NormalizeCodexClientVersion(settings[SettingKeyOpenAICodexClientVersion])
 	result.OpenAICodexClientVersionSynced = NormalizeCodexClientVersion(settings[SettingKeyOpenAICodexClientVersionSynced])
 	// 自动同步默认开启：缺失/空值一律视为开启，与 enable_client_dateline_normalization 同一惯例。

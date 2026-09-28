@@ -699,6 +699,8 @@ const (
 	// SettingKeyOpenAICodexUserAgent OpenAI Codex 完整 User-Agent（空值使用内置默认）
 	// 当客户端 UA 被识别为浏览器（Chrome/Firefox/Safari/Edge 等）时，转发给 OpenAI 上游前会替换为此值，
 	// 用于避免 Cloudflare 对浏览器型 UA 的质询拦截。
+	// SettingKeyOpenABPSEnabled BPS 代理总开关（仅 Team 账号；默认 false，后台热更新）。
+	SettingKeyOpenABPSEnabled      = "openai_bps_enabled"
 	SettingKeyOpenAICodexUserAgent = "openai_codex_user_agent"
 	// SettingKeyOpenAICodexClientVersion 网关对 ChatGPT 上游声明的 Codex 客户端版本号（管理员覆写）。
 	// 空值表示跟随自动同步值；自动同步也没有结果时回退到内置常量。

@@ -999,6 +999,57 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// BlockOpenBPSAccount BPS 上游 403 后封禁该账号 1 小时：写 extra 标记 + 优先级 +2
+// （只降一次，bps_priority_demoted 标记）。已封禁时不重复降级。返回是否本次生效。
+func (r *accountRepository) BlockOpenBPSAccount(ctx context.Context, accountID int64, until time.Time) (bool, error) {
+	ret, err := r.client.ExecContext(ctx, `
+		UPDATE accounts
+		SET priority = priority + CASE WHEN COALESCE(extra ->> 'bps_priority_demoted', 'false') <> 'true' THEN 2 ELSE 0 END,
+		    updated_at = now(),
+		    extra = jsonb_set(COALESCE(extra, '{}'::jsonb), '{bps_priority_demoted}',
+		        CASE WHEN COALESCE(extra ->> 'bps_priority_demoted', 'false') <> 'true' THEN 'true'::jsonb
+		             ELSE to_jsonb(extra ->> 'bps_priority_demoted') END, true),
+		    extra = jsonb_set(COALESCE(extra, '{}'::jsonb), '{bps_blocked_until}', to_jsonb($2::text), true)
+		WHERE id = $1 AND deleted_at IS NULL`,
+		accountID, until.Format(time.RFC3339))
+	if err != nil {
+		return false, err
+	}
+	affected, err := ret.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
+// UnblockOpenBPSAccount BPS 探测恢复：清封禁标记，若曾因 BPS 降过优先级则 -2
+// （最低 1）并清标记。返回是否本次生效。
+func (r *accountRepository) UnblockOpenBPSAccount(ctx context.Context, accountID int64) (bool, error) {
+	ret, err := r.client.ExecContext(ctx, `
+		UPDATE accounts
+		SET priority = GREATEST(priority - CASE WHEN COALESCE(extra ->> 'bps_priority_demoted', 'false') = 'true' THEN 2 ELSE 0 END, 1),
+		    updated_at = now(),
+		    extra = extra - 'bps_blocked_until'
+		WHERE id = $1 AND deleted_at IS NULL
+		  AND COALESCE(extra ->> 'bps_blocked_until', '') <> ''`,
+		accountID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := ret.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if affected == 0 {
+		return false, nil
+	}
+	// 降级标记在还原后清除（第二次成功不再重复加分）。
+	_, _ = r.client.ExecContext(ctx, `
+		UPDATE accounts SET extra = extra - 'bps_priority_demoted'
+		WHERE id = $1 AND COALESCE(extra ->> 'bps_priority_demoted', 'false') = 'true'`, accountID)
+	return true, nil
+}
+
 func (r *accountRepository) List(ctx context.Context, params pagination.PaginationParams) ([]service.Account, *pagination.PaginationResult, error) {
 	return r.ListWithFilters(ctx, params, "", "", "", "", 0, "")
 }

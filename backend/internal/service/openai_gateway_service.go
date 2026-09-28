@@ -508,6 +508,10 @@ type OpenAIGatewayService struct {
 	// 剥离跨账号回带（openai_codex_turn_state.go）。
 	openaiCodexTurnStateOrigins sync.Map
 	openaiCodexTurnStateWrites  atomic.Uint64
+
+	// BPS 代理（Team 账号 → bps.openai.com）的调用记忆，惰性初始化。
+	openAIBPSMemoryOnce  sync.Once
+	openAIBPSMemoryState *bpsCallMemory
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
