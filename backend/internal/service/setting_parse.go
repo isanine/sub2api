@@ -888,10 +888,19 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	result.AntigravityUserAgentVersion = antigravity.NormalizeUserAgentVersion(settings[SettingKeyAntigravityUserAgentVersion])
 	result.OpenAICodexUserAgent = strings.TrimSpace(settings[SettingKeyOpenAICodexUserAgent])
-	if v, ok := settings[SettingKeyOpenABPSEnabled]; ok && strings.TrimSpace(v) != "" {
-		result.OpenABPSEnabled = strings.TrimSpace(v) == "true"
-	} else if s != nil && s.cfg != nil {
-		result.OpenABPSEnabled = s.cfg.Gateway.OpenBPS.Enabled
+	result.OpenABPSTeamEnabled = s != nil && s.cfg != nil && s.cfg.Gateway.OpenBPS.TeamEnabled
+	result.OpenABPSPersonalEnabled = s != nil && s.cfg != nil && s.cfg.Gateway.OpenBPS.PersonalEnabled
+	if v, ok := settings[SettingKeyOpenABPSTeamEnabled]; ok && strings.TrimSpace(v) != "" {
+		result.OpenABPSTeamEnabled = strings.TrimSpace(v) == "true"
+	}
+	if v, ok := settings[SettingKeyOpenABPSPersonalEnabled]; ok && strings.TrimSpace(v) != "" {
+		result.OpenABPSPersonalEnabled = strings.TrimSpace(v) == "true"
+	}
+	// 兼容旧单开关（此前仅 Team 走 BPS）：旧键开启且新键缺失时按 Team 开启处理。
+	if v, ok := settings["openai_bps_enabled"]; ok && strings.TrimSpace(v) == "true" {
+		if _, hasTeam := settings[SettingKeyOpenABPSTeamEnabled]; !hasTeam {
+			result.OpenABPSTeamEnabled = true
+		}
 	}
 	result.OpenAICodexClientVersion = NormalizeCodexClientVersion(settings[SettingKeyOpenAICodexClientVersion])
 	result.OpenAICodexClientVersionSynced = NormalizeCodexClientVersion(settings[SettingKeyOpenAICodexClientVersionSynced])

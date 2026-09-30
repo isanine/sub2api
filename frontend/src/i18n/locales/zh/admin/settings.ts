@@ -554,9 +554,12 @@ export default {
         claudeCodeVersionAutoSync: '自动同步 Claude Code 版本号',
         claudeCodeVersionAutoSyncHint: '每小时从官方发布渠道获取最新版本的 Claude Code 客户端版本号，无需为了跟版本而升级本服务。关闭后停止获取新版本，已同步的版本仍可使用；上方手填版本始终优先。',
         claudeCodeVersionSyncedValue: '当前同步到：{version}',
-        bpsEnabled: 'BPS 代理（Team 账号）',
-        bpsEnabledDesc:
-          '开启后 Team/Business 账号的 /responses 流量改走 ChatGPT for Excel 插件后端（bps.openai.com），自动完成工具桥接。账号被上游 403 时自动封禁 1 小时并降低优先级 2，到期后自动探测恢复。默认关闭。',
+        bpsTeamEnabled: 'BPS 代理：Team 账号',
+        bpsTeamEnabledDesc:
+          '开启后 Team/Business 账号的 /responses 流量改走 ChatGPT for Excel 插件后端（bps.openai.com），自动完成工具桥接。403 时降低优先级 2，成功后自动恢复；BPS 可用的账号调度优先级最高。默认关闭。',
+        bpsPersonalEnabled: 'BPS 代理：普通账号',
+        bpsPersonalEnabledDesc:
+          '开启后普通（个人 free/plus/pro）账号同样走 BPS 代理，行为与 Team 开关一致。默认关闭。',
         codexHardeningTitle: 'Codex 设置',
         codexClientRestrictionTitle: 'Codex 客户端限制',
         codexHardeningDesc:

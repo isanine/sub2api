@@ -1493,7 +1493,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 
 	// BPS 可用的账号调度优先级最高（高于粘滞）：候选里存在 BPS 可用的
 	// Team 账号时只在其中负载均衡；没有任何可用账号则保持原候选池。
-	if s.service.openAIBPSEnabled() {
+	if s.service.openAIBPSAnyScopeEnabled() {
 		bpsAvailable := make([]*Account, 0, len(filtered))
 		for _, account := range filtered {
 			if s.service.openAIBPSAvailable(account) {

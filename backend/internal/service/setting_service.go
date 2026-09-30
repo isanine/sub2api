@@ -127,8 +127,10 @@ type SettingService struct {
 	antigravityUAVersionCache   atomic.Value // *cachedAntigravityUserAgentVersion
 	antigravityUAVersionSF      singleflight.Group
 	openAICodexUACache          atomic.Value // *cachedOpenAICodexUserAgent
-	openABPSEnabledCache        atomic.Value // *cachedOpenABPSEnabled
-	openABPSEnabledSF           singleflight.Group
+	openABPSTeamCache           atomic.Value // *cachedOpenABPSScopeEnabled
+	openABPSTeamSF              singleflight.Group
+	openABPSPersonalCache       atomic.Value // *cachedOpenABPSScopeEnabled
+	openABPSPersonalSF          singleflight.Group
 	openAICodexUASF             singleflight.Group
 	openAICodexVersionCache     atomic.Value // *cachedOpenAICodexClientVersion
 	openAICodexVersionSF        singleflight.Group

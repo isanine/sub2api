@@ -1616,23 +1616,53 @@ func bpsIsOAuthLikeAccount(account *Account) bool {
 	return account != nil && account.IsOpenAIOAuthLike() && !account.IsShadow()
 }
 
-// openAIBPSEnabled BPS 代理总开关（后台热更新）。
-func (s *OpenAIGatewayService) openAIBPSEnabled() bool {
-	fallback := s != nil && s.cfg != nil && s.cfg.Gateway.OpenBPS.Enabled
-	if s == nil || s.settingService == nil {
-		return fallback
-	}
-	return s.settingService.GetOpenABPSEnabled(context.Background(), fallback)
-}
-
-// openAIBPSRoutedFor 判定该请求是否走 BPS：开关开 + Team 账号。
-// 403 不封禁账号（只降优先级 +2），由调度偏好与健康度自然调节流量，
-// 下次成功即自动恢复优先级。
-func (s *OpenAIGatewayService) openAIBPSRoutedFor(account *Account) bool {
-	if s == nil || !s.openAIBPSEnabled() {
+// openAIBPSScopeEnabledFor 该账号所属范围（Team / 普通）的 BPS 开关：
+// 后台热更新值优先，缺失回退 yaml（默认 false）。
+func (s *OpenAIGatewayService) openAIBPSScopeEnabledFor(account *Account) bool {
+	if s == nil || !bpsIsOAuthLikeAccount(account) {
 		return false
 	}
-	return bpsIsTeamAccount(account) && bpsIsOAuthLikeAccount(account)
+	team := bpsIsTeamAccount(account)
+	fallback := false
+	if s.cfg != nil {
+		if team {
+			fallback = s.cfg.Gateway.OpenBPS.TeamEnabled
+		} else {
+			fallback = s.cfg.Gateway.OpenBPS.PersonalEnabled
+		}
+	}
+	if s.settingService == nil {
+		return fallback
+	}
+	if team {
+		return s.settingService.GetOpenABPSTeamEnabled(context.Background(), fallback)
+	}
+	return s.settingService.GetOpenABPSPersonalEnabled(context.Background(), fallback)
+}
+
+// openAIBPSAnyScopeEnabled 任一范围的 BPS 开关开启（负载均衡收窄的前置闸）。
+func (s *OpenAIGatewayService) openAIBPSAnyScopeEnabled() bool {
+	if s == nil {
+		return false
+	}
+	if s.cfg != nil && (s.cfg.Gateway.OpenBPS.TeamEnabled || s.cfg.Gateway.OpenBPS.PersonalEnabled) && s.settingService == nil {
+		return true
+	}
+	if s.settingService == nil {
+		return false
+	}
+	return s.settingService.GetOpenABPSTeamEnabled(context.Background(), false) ||
+		s.settingService.GetOpenABPSPersonalEnabled(context.Background(), false)
+}
+
+// openAIBPSRoutedFor 判定该请求是否走 BPS：账号所属范围（Team / 普通）的
+// 开关开启。403 不封禁账号（只降优先级 +2），由调度偏好与健康度自然调节
+// 流量，下次成功即自动恢复优先级。
+func (s *OpenAIGatewayService) openAIBPSRoutedFor(account *Account) bool {
+	if s == nil {
+		return false
+	}
+	return s.openAIBPSScopeEnabledFor(account)
 }
 
 // bpsHealth 记录账号 BPS 最近一次成功 / 403 时间，驱动调度偏好。

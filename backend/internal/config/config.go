@@ -117,9 +117,11 @@ type SimpleModeConfig struct {
 }
 
 // OpenBPSConfig 控制 BPS 代理（ChatGPT for Excel 加载项后端）：
-// 仅 Team 账号启用；403 自动封禁 1 小时并降优先级 2，到期探测恢复。
+// Team 与普通（个人）账号各一个独立开关，默认全关；403 只降优先级 +2，
+// 下次 BPS 成功自动恢复。
 type OpenBPSConfig struct {
-	Enabled bool `mapstructure:"enabled"`
+	TeamEnabled     bool `mapstructure:"team_enabled"`
+	PersonalEnabled bool `mapstructure:"personal_enabled"`
 }
 
 // PluginConfig 控制管理员手动上传的本地进程插件。
@@ -2434,6 +2436,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.failover_on_400", false)
 	viper.SetDefault("gateway.max_account_switches", 10)
 	viper.SetDefault("gateway.max_account_switches_gemini", 3)
+	viper.SetDefault("gateway.openai_bps.team_enabled", false)
+	viper.SetDefault("gateway.openai_bps.personal_enabled", false)
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.disable_codex_identity_enforcement", false)
 	viper.SetDefault("gateway.disable_codex_originator_normalization", false)

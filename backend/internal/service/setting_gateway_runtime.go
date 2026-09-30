@@ -289,31 +289,39 @@ func (s *SettingService) GetAntigravityUserAgentVersion(ctx context.Context) str
 
 // GetOpenAICodexUserAgent 返回 OpenAI Codex 上游请求使用的 User-Agent。
 // 后台设置优先；为空时回退到内置默认值。
-type cachedOpenABPSEnabled struct {
+type cachedOpenABPSScopeEnabled struct {
 	value     bool
 	expiresAt int64
 }
 
-const openABPSEnabledCacheTTL = 5 * time.Second
+const openABPSScopeCacheTTL = 5 * time.Second
 
-// GetOpenABPSEnabled 返回 BPS 代理总开关（仅 Team 账号走 bps.openai.com）。
-// 设置键存在时以后台为准；缺失则回退 yaml gateway.openai_bps.enabled。
-func (s *SettingService) GetOpenABPSEnabled(ctx context.Context, fallback bool) bool {
+// GetOpenABPSTeamEnabled 返回 BPS 代理 Team 账号开关；缺失回退 yaml（默认 false）。
+func (s *SettingService) GetOpenABPSTeamEnabled(ctx context.Context, fallback bool) bool {
+	return s.getOpenABPSScopeEnabled(ctx, SettingKeyOpenABPSTeamEnabled, &s.openABPSTeamCache, &s.openABPSTeamSF, fallback)
+}
+
+// GetOpenABPSPersonalEnabled 返回 BPS 代理普通（个人）账号开关；缺失回退 yaml。
+func (s *SettingService) GetOpenABPSPersonalEnabled(ctx context.Context, fallback bool) bool {
+	return s.getOpenABPSScopeEnabled(ctx, SettingKeyOpenABPSPersonalEnabled, &s.openABPSPersonalCache, &s.openABPSPersonalSF, fallback)
+}
+
+func (s *SettingService) getOpenABPSScopeEnabled(ctx context.Context, key string, cache *atomic.Value, sf *singleflight.Group, fallback bool) bool {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if s == nil || s.settingRepo == nil {
 		return fallback
 	}
-	if cached, ok := s.openABPSEnabledCache.Load().(*cachedOpenABPSEnabled); ok && cached != nil {
+	if cached, ok := cache.Load().(*cachedOpenABPSScopeEnabled); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return cached.value
 		}
 	}
-	result, _, _ := s.openABPSEnabledSF.Do(string(SettingKeyOpenABPSEnabled), func() (any, error) {
+	resultCh := sf.DoChan(key, func() (any, error) {
 		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		value, err := s.settingRepo.GetValue(dbCtx, SettingKeyOpenABPSEnabled)
+		value, err := s.settingRepo.GetValue(dbCtx, key)
 		enabled := fallback
 		if err == nil {
 			if v := strings.TrimSpace(value); v != "" {
@@ -322,23 +330,31 @@ func (s *SettingService) GetOpenABPSEnabled(ctx context.Context, fallback bool) 
 		} else if !errors.Is(err, ErrSettingNotFound) {
 			return fallback, nil
 		}
-		s.openABPSEnabledCache.Store(&cachedOpenABPSEnabled{
+		cache.Store(&cachedOpenABPSScopeEnabled{
 			value:     enabled,
-			expiresAt: time.Now().Add(openABPSEnabledCacheTTL).UnixNano(),
+			expiresAt: time.Now().Add(openABPSScopeCacheTTL).UnixNano(),
 		})
 		return enabled, nil
 	})
-	if v, ok := result.(bool); ok {
-		return v
+	select {
+	case <-ctx.Done():
+		return fallback
+	case result := <-resultCh:
+		if v, ok := result.Val.(bool); ok && result.Err == nil {
+			return v
+		}
+		return fallback
 	}
-	return fallback
 }
 
-func (s *SettingService) InvalidateOpenABPSEnabledCache() {
+func (s *SettingService) InvalidateOpenABPScopeCaches() {
 	if s == nil {
 		return
 	}
-	s.openABPSEnabledCache.Store(&cachedOpenABPSEnabled{expiresAt: 0})
+	s.openABPSTeamSF.Forget(SettingKeyOpenABPSTeamEnabled)
+	s.openABPSTeamCache.Store(&cachedOpenABPSScopeEnabled{expiresAt: 0})
+	s.openABPSPersonalSF.Forget(SettingKeyOpenABPSPersonalEnabled)
+	s.openABPSPersonalCache.Store(&cachedOpenABPSScopeEnabled{expiresAt: 0})
 }
 
 func (s *SettingService) GetOpenAICodexUserAgent(ctx context.Context) string {

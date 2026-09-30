@@ -254,7 +254,8 @@ type UpdateSettingsRequest struct {
 	RewriteMessageCacheControl             *bool   `json:"rewrite_message_cache_control"`
 	EnableClientDatelineNormalization      *bool   `json:"enable_client_dateline_normalization"`
 	AntigravityUserAgentVersion            *string `json:"antigravity_user_agent_version"`
-	OpenABPSEnabled                        *bool   `json:"openai_bps_enabled"`
+	OpenABPSTeamEnabled                    *bool   `json:"openai_bps_team_enabled"`
+	OpenABPSPersonalEnabled                *bool   `json:"openai_bps_personal_enabled"`
 	OpenAICodexUserAgent                   *string `json:"openai_codex_user_agent"`
 	OpenAICodexClientVersion               *string `json:"openai_codex_client_version"`
 	OpenAICodexVersionAutoSyncEnabled      *bool   `json:"openai_codex_version_auto_sync_enabled"`
@@ -1768,11 +1769,17 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AntigravityUserAgentVersion
 		}(),
-		OpenABPSEnabled: func() bool {
-			if req.OpenABPSEnabled != nil {
-				return *req.OpenABPSEnabled
+		OpenABPSTeamEnabled: func() bool {
+			if req.OpenABPSTeamEnabled != nil {
+				return *req.OpenABPSTeamEnabled
 			}
-			return previousSettings.OpenABPSEnabled
+			return previousSettings.OpenABPSTeamEnabled
+		}(),
+		OpenABPSPersonalEnabled: func() bool {
+			if req.OpenABPSPersonalEnabled != nil {
+				return *req.OpenABPSPersonalEnabled
+			}
+			return previousSettings.OpenABPSPersonalEnabled
 		}(),
 		OpenAICodexUserAgent: func() string {
 			if req.OpenAICodexUserAgent != nil {
@@ -2353,7 +2360,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		RewriteMessageCacheControl:                             updatedSettings.RewriteMessageCacheControl,
 		EnableClientDatelineNormalization:                      updatedSettings.EnableClientDatelineNormalization,
 		AntigravityUserAgentVersion:                            updatedSettings.AntigravityUserAgentVersion,
-		OpenABPSEnabled:                                        updatedSettings.OpenABPSEnabled,
+		OpenABPSTeamEnabled:                                    updatedSettings.OpenABPSTeamEnabled,
+		OpenABPSPersonalEnabled:                                updatedSettings.OpenABPSPersonalEnabled,
 		OpenAICodexUserAgent:                                   updatedSettings.OpenAICodexUserAgent,
 		OpenAICodexClientVersion:                               updatedSettings.OpenAICodexClientVersion,
 		OpenAICodexClientVersionSynced:                         updatedSettings.OpenAICodexClientVersionSynced,

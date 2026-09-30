@@ -4505,15 +4505,29 @@
                 <div class="flex items-center justify-between gap-4">
                   <div class="min-w-0">
                     <h3 class="text-base font-semibold text-gray-900 dark:text-white">
-                      {{ t("admin.settings.gatewayForwarding.bpsEnabled") }}
+                      {{ t("admin.settings.gatewayForwarding.bpsTeamEnabled") }}
                     </h3>
                     <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      {{ t("admin.settings.gatewayForwarding.bpsEnabledDesc") }}
+                      {{ t("admin.settings.gatewayForwarding.bpsTeamEnabledDesc") }}
                     </p>
                   </div>
                   <Toggle
-                    id="openai-bps-enabled"
-                    v-model="form.openai_bps_enabled"
+                    id="openai-bps-team-enabled"
+                    v-model="form.openai_bps_team_enabled"
+                  />
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                  <div class="min-w-0">
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">
+                      {{ t("admin.settings.gatewayForwarding.bpsPersonalEnabled") }}
+                    </h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.gatewayForwarding.bpsPersonalEnabledDesc") }}
+                    </p>
+                  </div>
+                  <Toggle
+                    id="openai-bps-personal-enabled"
+                    v-model="form.openai_bps_personal_enabled"
                   />
                 </div>
                 <div>
@@ -10009,7 +10023,8 @@ const form = reactive<SettingsForm>({
   rewrite_message_cache_control: false,
   enable_client_dateline_normalization: true,
   antigravity_user_agent_version: "",
-  openai_bps_enabled: false,
+  openai_bps_team_enabled: false,
+  openai_bps_personal_enabled: false,
   openai_codex_user_agent: "",
   openai_codex_client_version: "",
   // 只读展示：自动同步任务写入的官方最新稳定版，不参与提交（提交载荷按字段显式构造）
@@ -11654,7 +11669,8 @@ async function saveSettings() {
         form.enable_client_dateline_normalization,
       antigravity_user_agent_version:
         form.antigravity_user_agent_version?.trim() || "",
-      openai_bps_enabled: form.openai_bps_enabled,
+      openai_bps_team_enabled: form.openai_bps_team_enabled,
+      openai_bps_personal_enabled: form.openai_bps_personal_enabled,
       openai_codex_user_agent:
         form.openai_codex_user_agent?.trim() || "",
       openai_codex_client_version:

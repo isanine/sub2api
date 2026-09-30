@@ -3,7 +3,6 @@ package service
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -185,29 +184,41 @@ func TestBPSSSEReader(t *testing.T) {
 	require.Contains(t, text, "output_text")
 }
 
-// 账号状态机：路由判定 + 403 降级 / 成功恢复（不封禁）。
+// 账号状态机：双开关路由判定 + 403 降级 / 成功恢复（不封禁）。
 func TestBPSRoutedDecision(t *testing.T) {
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
-	svc.cfg.Gateway.OpenBPS.Enabled = true
-
 	team := bpsTestAccount(41, "team")
 	personal := bpsTestAccount(42, "plus")
 	require.True(t, bpsIsTeamAccount(team))
 	require.False(t, bpsIsTeamAccount(personal))
-	require.True(t, svc.openAIBPSRoutedFor(team))
-	require.False(t, svc.openAIBPSRoutedFor(personal), "仅 Team 账号")
-	// 无健康记录：可用（乐观）。
-	require.True(t, svc.openAIBPSAvailable(team))
-	// 开关关：一律不可用。
-	svc.cfg.Gateway.OpenBPS.Enabled = false
+
+	// 默认全关。
 	require.False(t, svc.openAIBPSRoutedFor(team))
-	require.False(t, svc.openAIBPSAvailable(team))
+	require.False(t, svc.openAIBPSRoutedFor(personal))
+
+	// 只开 Team：Team 走 BPS，普通不走。
+	svc.cfg.Gateway.OpenBPS.TeamEnabled = true
+	require.True(t, svc.openAIBPSRoutedFor(team))
+	require.False(t, svc.openAIBPSRoutedFor(personal))
+	require.True(t, svc.openAIBPSAvailable(team), "无健康记录视为可用")
+	require.False(t, svc.openAIBPSAvailable(personal))
+
+	// 只开普通：普通走 BPS，Team 不走。
+	svc.cfg.Gateway.OpenBPS.TeamEnabled = false
+	svc.cfg.Gateway.OpenBPS.PersonalEnabled = true
+	require.False(t, svc.openAIBPSRoutedFor(team))
+	require.True(t, svc.openAIBPSRoutedFor(personal))
+
+	// 双开：都走。
+	svc.cfg.Gateway.OpenBPS.TeamEnabled = true
+	require.True(t, svc.openAIBPSRoutedFor(team))
+	require.True(t, svc.openAIBPSRoutedFor(personal))
 }
 
 // 403 → 不可用 + 降级；成功 → 恢复可用 + 还原优先级。
 func TestBPSHealthDemoteAndRestore(t *testing.T) {
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
-	svc.cfg.Gateway.OpenBPS.Enabled = true
+	svc.cfg.Gateway.OpenBPS.TeamEnabled = true
 	repo := &bpsBlockRecorderRepo{}
 	svc.accountRepo = repo
 	team := bpsTestAccount(41, "team")
@@ -264,13 +275,17 @@ func TestBPSRewriteUpstreamRequest(t *testing.T) {
 	require.Equal(t, "text/event-stream", req.Header.Get("accept"))
 }
 
-// 设置键解析与开关读取。
-func TestOpenABPSEnabledSetting(t *testing.T) {
+// 双开关读取：yaml 回退。
+func TestOpenABPSScopeSettings(t *testing.T) {
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
-	require.False(t, svc.openAIBPSEnabled())
-	svc.cfg.Gateway.OpenBPS.Enabled = true
-	require.True(t, svc.openAIBPSEnabled())
-	var _ = json.Marshal
+	team := bpsTestAccount(41, "team")
+	personal := bpsTestAccount(42, "plus")
+	require.False(t, svc.openAIBPSScopeEnabledFor(team))
+	require.False(t, svc.openAIBPSScopeEnabledFor(personal))
+	svc.cfg.Gateway.OpenBPS.PersonalEnabled = true
+	require.False(t, svc.openAIBPSScopeEnabledFor(team))
+	require.True(t, svc.openAIBPSScopeEnabledFor(personal))
+	require.True(t, svc.openAIBPSAnyScopeEnabled())
 }
 
 func TestBPSToolOutputEmptyIDGuard(t *testing.T) {
