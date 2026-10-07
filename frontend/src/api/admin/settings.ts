@@ -1386,6 +1386,18 @@ export interface StreamTimeoutSettings {
 }
 
 /**
+ * High TTFT (time-to-first-token) settings interface
+ */
+export interface HighTTFTSettings {
+  enabled: boolean;
+  action: "temp_unsched" | "error" | "none";
+  temp_unsched_minutes: number;
+  threshold_count: number;
+  threshold_window_minutes: number;
+  ttft_threshold_seconds: number;
+}
+
+/**
  * Get stream timeout settings
  * @returns Stream timeout settings
  */
@@ -1406,6 +1418,29 @@ export async function updateStreamTimeoutSettings(
 ): Promise<StreamTimeoutSettings> {
   const { data } = await apiClient.put<StreamTimeoutSettings>(
     "/admin/settings/stream-timeout",
+    settings,
+  );
+  return data;
+}
+
+/**
+ * Get high TTFT settings
+ */
+export async function getHighTTFTSettings(): Promise<HighTTFTSettings> {
+  const { data } = await apiClient.get<HighTTFTSettings>(
+    "/admin/settings/high-ttft",
+  );
+  return data;
+}
+
+/**
+ * Update high TTFT settings
+ */
+export async function updateHighTTFTSettings(
+  settings: HighTTFTSettings,
+): Promise<HighTTFTSettings> {
+  const { data } = await apiClient.put<HighTTFTSettings>(
+    "/admin/settings/high-ttft",
     settings,
   );
   return data;
@@ -1603,6 +1638,8 @@ export const settingsAPI = {
   updatePanelRateLimitSettings,
   getStreamTimeoutSettings,
   updateStreamTimeoutSettings,
+  getHighTTFTSettings,
+  updateHighTTFTSettings,
   getRectifierSettings,
   updateRectifierSettings,
   getBetaPolicySettings,

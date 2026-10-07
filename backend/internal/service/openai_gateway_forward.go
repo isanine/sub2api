@@ -1263,6 +1263,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			usage = streamResult.usage
 			firstTokenMs = streamResult.firstTokenMs
+			// 高首字检测：连续多次 TTFT 超阈值时按系统设置处置账号（暂停/错误）。
+			if firstTokenMs != nil && s.rateLimitService != nil {
+				_ = s.rateLimitService.HandleHighTTFT(ctx, account, upstreamModel, int(*firstTokenMs/1000))
+			}
 			responseID = strings.TrimSpace(streamResult.responseID)
 			imageCount = streamResult.imageCount
 			imageOutputSizes = streamResult.imageOutputSizes

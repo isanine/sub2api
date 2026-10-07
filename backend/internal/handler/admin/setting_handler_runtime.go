@@ -263,6 +263,68 @@ func (h *SettingHandler) GetStreamTimeoutSettings(c *gin.Context) {
 	})
 }
 
+// GetHighTTFTSettings 获取高首字响应处理配置
+// GET /api/v1/admin/settings/high-ttft
+func (h *SettingHandler) GetHighTTFTSettings(c *gin.Context) {
+	settings, err := h.settingService.GetHighTTFTSettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, dto.HighTTFTSettings{
+		Enabled:                settings.Enabled,
+		Action:                 settings.Action,
+		TempUnschedMinutes:     settings.TempUnschedMinutes,
+		ThresholdCount:         settings.ThresholdCount,
+		ThresholdWindowMinutes: settings.ThresholdWindowMinutes,
+		TTFTThresholdSeconds:   settings.TTFTThresholdSeconds,
+	})
+}
+
+// UpdateHighTTFTSettingsRequest 更新高首字配置请求
+type UpdateHighTTFTSettingsRequest struct {
+	Enabled                bool   `json:"enabled"`
+	Action                 string `json:"action"`
+	TempUnschedMinutes     int    `json:"temp_unsched_minutes"`
+	ThresholdCount         int    `json:"threshold_count"`
+	ThresholdWindowMinutes int    `json:"threshold_window_minutes"`
+	TTFTThresholdSeconds   int    `json:"ttft_threshold_seconds"`
+}
+
+// UpdateHighTTFTSettings 更新高首字响应处理配置
+// PUT /api/v1/admin/settings/high-ttft
+func (h *SettingHandler) UpdateHighTTFTSettings(c *gin.Context) {
+	var req UpdateHighTTFTSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	settings := &service.HighTTFTSettings{
+		Enabled:                req.Enabled,
+		Action:                 req.Action,
+		TempUnschedMinutes:     req.TempUnschedMinutes,
+		ThresholdCount:         req.ThresholdCount,
+		ThresholdWindowMinutes: req.ThresholdWindowMinutes,
+		TTFTThresholdSeconds:   req.TTFTThresholdSeconds,
+	}
+
+	if err := h.settingService.SetHighTTFTSettings(c.Request.Context(), settings); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, dto.HighTTFTSettings{
+		Enabled:                settings.Enabled,
+		Action:                 settings.Action,
+		TempUnschedMinutes:     settings.TempUnschedMinutes,
+		ThresholdCount:         settings.ThresholdCount,
+		ThresholdWindowMinutes: settings.ThresholdWindowMinutes,
+		TTFTThresholdSeconds:   settings.TTFTThresholdSeconds,
+	})
+}
+
 // GetRectifierSettings 获取请求整流器配置
 // GET /api/v1/admin/settings/rectifier
 func (h *SettingHandler) GetRectifierSettings(c *gin.Context) {

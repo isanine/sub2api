@@ -43,3 +43,11 @@ type TimeoutCounterCache interface {
 	// GetTimeoutCountTTL 获取计数器剩余过期时间
 	GetTimeoutCountTTL(ctx context.Context, accountID int64) (time.Duration, error)
 }
+
+// HighTTFTCounterCache 高首字响应计数器缓存接口（连续多次 TTFT 超阈值判定）。
+type HighTTFTCounterCache interface {
+	// IncrementHighTTFTCount 增加高首字计数（滑动窗口刷新），返回当前值
+	IncrementHighTTFTCount(ctx context.Context, accountID int64, windowMinutes int) (int64, error)
+	// ResetHighTTFTCount 重置高首字计数（出现正常首字时调用）
+	ResetHighTTFTCount(ctx context.Context, accountID int64) error
+}

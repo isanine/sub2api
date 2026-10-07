@@ -596,6 +596,8 @@ const (
 
 	// SettingKeyStreamTimeoutSettings stores JSON config for stream timeout handling.
 	SettingKeyStreamTimeoutSettings = "stream_timeout_settings"
+	// SettingKeyHighTTFTSettings 高首字响应处理配置 JSON（连续多次 TTFT 超阈值处置账号）。
+	SettingKeyHighTTFTSettings = "high_ttft_settings"
 
 	// =========================
 	// Request Rectifier (请求整流器)

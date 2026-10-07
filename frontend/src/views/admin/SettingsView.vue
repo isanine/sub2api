@@ -417,6 +417,146 @@
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t("admin.settings.highTTFT.title") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t("admin.settings.highTTFT.description") }}
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div
+                v-if="highTTFTLoading"
+                class="flex items-center gap-2 text-gray-500"
+              >
+                <div
+                  class="h-4 w-4 animate-spin rounded-full border-b-2 border-primary-600"
+                ></div>
+                {{ t("common.loading") }}
+              </div>
+
+              <template v-else>
+                <div class="flex items-center justify-between">
+                  <div>
+                    <label class="font-medium text-gray-900 dark:text-white">{{
+                      t("admin.settings.highTTFT.enabled")
+                    }}</label>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.highTTFT.enabledHint") }}
+                    </p>
+                  </div>
+                  <Toggle v-model="highTTFTForm.enabled" />
+                </div>
+
+                <div
+                  v-if="highTTFTForm.enabled"
+                  class="space-y-4 border-t border-gray-100 pt-4 dark:border-dark-700"
+                >
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.highTTFT.action") }}
+                    </label>
+                    <select v-model="highTTFTForm.action" class="input w-64">
+                      <option value="temp_unsched">
+                        {{ t("admin.settings.highTTFT.actionTempUnsched") }}
+                      </option>
+                      <option value="error">
+                        {{ t("admin.settings.highTTFT.actionError") }}
+                      </option>
+                      <option value="none">
+                        {{ t("admin.settings.highTTFT.actionNone") }}
+                      </option>
+                    </select>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.highTTFT.actionHint") }}
+                    </p>
+                  </div>
+
+                  <div v-if="highTTFTForm.action === 'temp_unsched'">
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.highTTFT.tempUnschedMinutes") }}
+                    </label>
+                    <input
+                      v-model.number="highTTFTForm.temp_unsched_minutes"
+                      type="number"
+                      min="1"
+                      class="input w-40"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.highTTFT.ttftThresholdSeconds") }}
+                    </label>
+                    <input
+                      v-model.number="highTTFTForm.ttft_threshold_seconds"
+                      type="number"
+                      min="1"
+                      class="input w-40"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        t("admin.settings.highTTFT.ttftThresholdSecondsHint")
+                      }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.highTTFT.thresholdCount") }}
+                    </label>
+                    <input
+                      v-model.number="highTTFTForm.threshold_count"
+                      type="number"
+                      min="1"
+                      class="input w-40"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.highTTFT.thresholdCountHint") }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.highTTFT.thresholdWindowMinutes") }}
+                    </label>
+                    <input
+                      v-model.number="highTTFTForm.threshold_window_minutes"
+                      type="number"
+                      min="1"
+                      class="input w-40"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.highTTFT.thresholdWindowHint") }}
+                    </p>
+                  </div>
+
+                  <button
+                    :disabled="highTTFTSaving"
+                    class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50"
+                    @click="saveHighTTFTSettings"
+                  >
+                    {{ highTTFTSaving ? t("common.saving") : t("common.save") }}
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
                 {{ t("admin.settings.streamTimeout.title") }}
               </h2>
               <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -9246,6 +9386,53 @@ const streamTimeoutForm = reactive({
   threshold_window_minutes: 10,
 });
 
+// High TTFT 状态
+const highTTFTLoading = ref(true);
+const highTTFTSaving = ref(false);
+const highTTFTForm = reactive({
+  enabled: false,
+  action: "temp_unsched" as "temp_unsched" | "error" | "none",
+  temp_unsched_minutes: 5,
+  threshold_count: 3,
+  threshold_window_minutes: 10,
+  ttft_threshold_seconds: 30,
+});
+
+// High TTFT 方法
+async function loadHighTTFTSettings() {
+  highTTFTLoading.value = true;
+  try {
+    const settings = await adminAPI.settings.getHighTTFTSettings();
+    Object.assign(highTTFTForm, settings);
+  } catch (_error: unknown) {
+    // Silent fail - settings will use defaults
+  } finally {
+    highTTFTLoading.value = false;
+  }
+}
+
+async function saveHighTTFTSettings() {
+  highTTFTSaving.value = true;
+  try {
+    const updated = await adminAPI.settings.updateHighTTFTSettings({
+      enabled: highTTFTForm.enabled,
+      action: highTTFTForm.action,
+      temp_unsched_minutes: highTTFTForm.temp_unsched_minutes,
+      threshold_count: highTTFTForm.threshold_count,
+      threshold_window_minutes: highTTFTForm.threshold_window_minutes,
+      ttft_threshold_seconds: highTTFTForm.ttft_threshold_seconds,
+    });
+    Object.assign(highTTFTForm, updated);
+    appStore.showSuccess(t("admin.settings.highTTFT.saved"));
+  } catch (error: unknown) {
+    appStore.showError(
+      extractApiErrorMessage(error, t("admin.settings.highTTFT.saveFailed")),
+    );
+  } finally {
+    highTTFTSaving.value = false;
+  }
+}
+
 // Rectifier 状态
 const rectifierLoading = ref(true);
 const rectifierSaving = ref(false);
@@ -12920,6 +13107,7 @@ onMounted(() => {
   loadRateLimit429CooldownSettings();
   loadPanelRateLimitSettings();
   loadStreamTimeoutSettings();
+  loadHighTTFTSettings();
   loadRectifierSettings();
   loadBetaPolicySettings();
   loadProviders();
