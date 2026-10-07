@@ -1065,6 +1065,57 @@ func (s *SettingService) SetOpenAIFastPolicySettings(ctx context.Context, settin
 	return s.settingRepo.Set(ctx, SettingKeyOpenAIFastPolicySettings, string(data))
 }
 
+// GetHighTTFTSettings 获取高首字响应处理配置
+func (s *SettingService) GetHighTTFTSettings(ctx context.Context) (*HighTTFTSettings, error) {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyHighTTFTSettings)
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			return DefaultHighTTFTSettings(), nil
+		}
+		return DefaultHighTTFTSettings(), nil
+	}
+
+	var settings HighTTFTSettings
+	if err := json.Unmarshal([]byte(value), &settings); err != nil {
+		return DefaultHighTTFTSettings(), nil
+	}
+	normalizeHighTTFTSettings(&settings)
+	return &settings, nil
+}
+
+func normalizeHighTTFTSettings(settings *HighTTFTSettings) {
+	switch settings.Action {
+	case StreamTimeoutActionTempUnsched, StreamTimeoutActionError, StreamTimeoutActionNone:
+	default:
+		settings.Action = StreamTimeoutActionTempUnsched
+	}
+	if settings.TempUnschedMinutes <= 0 {
+		settings.TempUnschedMinutes = 5
+	}
+	if settings.ThresholdCount <= 0 {
+		settings.ThresholdCount = 3
+	}
+	if settings.ThresholdWindowMinutes <= 0 {
+		settings.ThresholdWindowMinutes = 10
+	}
+	if settings.TTFTThresholdSeconds <= 0 {
+		settings.TTFTThresholdSeconds = 30
+	}
+}
+
+// SetHighTTFTSettings 设置高首字响应处理配置
+func (s *SettingService) SetHighTTFTSettings(ctx context.Context, settings *HighTTFTSettings) error {
+	if settings == nil {
+		return errors.New("high ttft settings cannot be nil")
+	}
+	normalizeHighTTFTSettings(settings)
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	return s.settingRepo.Set(ctx, SettingKeyHighTTFTSettings, string(data))
+}
+
 // SetStreamTimeoutSettings 设置流超时处理配置
 func (s *SettingService) SetStreamTimeoutSettings(ctx context.Context, settings *StreamTimeoutSettings) error {
 	if settings == nil {

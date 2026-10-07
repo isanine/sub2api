@@ -520,6 +520,35 @@ func DefaultStreamTimeoutSettings() *StreamTimeoutSettings {
 	}
 }
 
+// HighTTFTSettings 高首字响应处理配置：同一账号连续多次 TTFT 超过阈值时
+// 按处理方式处置该账号（镜像流超时处理，增加首字时间阈值字段）。
+type HighTTFTSettings struct {
+	// Enabled 是否启用高首字处理
+	Enabled bool `json:"enabled"`
+	// Action 处理方式: "temp_unsched" | "error" | "none"
+	Action string `json:"action"`
+	// TempUnschedMinutes 临时不可调度持续时间（分钟）
+	TempUnschedMinutes int `json:"temp_unsched_minutes"`
+	// ThresholdCount 触发阈值次数（连续多少次高首字才触发）
+	ThresholdCount int `json:"threshold_count"`
+	// ThresholdWindowMinutes 阈值窗口时间（分钟，滑动窗口）
+	ThresholdWindowMinutes int `json:"threshold_window_minutes"`
+	// TTFTThresholdSeconds 高首字时间阈值（秒）；正常首字响应会重置连续计数
+	TTFTThresholdSeconds int `json:"ttft_threshold_seconds"`
+}
+
+// DefaultHighTTFTSettings 返回默认的高首字配置（首字阈值默认 30 秒）。
+func DefaultHighTTFTSettings() *HighTTFTSettings {
+	return &HighTTFTSettings{
+		Enabled:                false,
+		Action:                 StreamTimeoutActionTempUnsched,
+		TempUnschedMinutes:     5,
+		ThresholdCount:         3,
+		ThresholdWindowMinutes: 10,
+		TTFTThresholdSeconds:   30,
+	}
+}
+
 // RectifierSettings 请求整流器配置
 type RectifierSettings struct {
 	Enabled                  bool     `json:"enabled"`                    // 总开关

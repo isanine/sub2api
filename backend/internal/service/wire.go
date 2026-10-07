@@ -515,6 +515,10 @@ func ProvideRateLimitService(
 		svc.SetOpenAIAPIKeyHealthCache(healthCache)
 	}
 	svc.SetTimeoutCounterCache(timeoutCounterCache)
+	// 具体实现同时满足 HighTTFTCounterCache；接口注入以便测试替身裁剪。
+	if highTTFTCache, ok := timeoutCounterCache.(HighTTFTCounterCache); ok {
+		svc.SetHighTTFTCounterCache(highTTFTCache)
+	}
 	svc.SetOpenAI403CounterCache(openAI403CounterCache)
 	svc.SetSettingService(settingService)
 	svc.SetTokenCacheInvalidator(tokenCacheInvalidator)

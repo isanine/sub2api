@@ -492,6 +492,16 @@ type StreamTimeoutSettings struct {
 	ThresholdWindowMinutes int    `json:"threshold_window_minutes"`
 }
 
+// HighTTFTSettings 高首字响应处理配置 DTO
+type HighTTFTSettings struct {
+	Enabled                bool   `json:"enabled"`
+	Action                 string `json:"action"`
+	TempUnschedMinutes     int    `json:"temp_unsched_minutes"`
+	ThresholdCount         int    `json:"threshold_count"`
+	ThresholdWindowMinutes int    `json:"threshold_window_minutes"`
+	TTFTThresholdSeconds   int    `json:"ttft_threshold_seconds"`
+}
+
 // RectifierSettings 请求整流器配置 DTO
 type RectifierSettings struct {
 	Enabled                  bool     `json:"enabled"`

@@ -1091,6 +1091,26 @@ export default {
         saved: '流超时设置保存成功',
         saveFailed: '保存流超时设置失败'
       },
+      highTTFT: {
+        title: '高首字处理',
+        description: '同一账号连续多次首字响应时间超过阈值时，自动处置该账号，避免慢账户持续被选中',
+        enabled: '启用高首字处理',
+        enabledHint: '当账号连续多次首字响应超过阈值时，自动暂停或标记该账户',
+        action: '处理方式',
+        actionTempUnsched: '临时不可调度',
+        actionError: '标记为错误状态',
+        actionNone: '不处理',
+        actionHint: '达到阈值后对账户执行的操作',
+        tempUnschedMinutes: '暂停时长（分钟）',
+        ttftThresholdSeconds: '高首字时间阈值（秒）',
+        ttftThresholdSecondsHint: '首字响应超过此时间视为高首字（默认 30 秒）',
+        thresholdCount: '触发阈值（次数）',
+        thresholdCountHint: '连续多少次高首字后触发处理（1-10次）',
+        thresholdWindowMinutes: '阈值窗口（分钟）',
+        thresholdWindowHint: '连续计数的时间窗口（1-60分钟），出现正常首字会重置计数',
+        saved: '高首字设置保存成功',
+        saveFailed: '保存高首字设置失败'
+      },
       rectifier: {
         title: '请求整流器',
         description: '当上游返回特定错误时，自动修正请求参数并重试，提高请求成功率',

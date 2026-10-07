@@ -27,6 +27,7 @@ type RateLimitService struct {
 	tempUnschedCache      TempUnschedCache
 	openAIAPIKeyHealth    OpenAIAPIKeyHealthCache
 	timeoutCounterCache   TimeoutCounterCache
+	highTTFTCounterCache  HighTTFTCounterCache
 	openAI403CounterCache OpenAI403CounterCache
 	settingService        *SettingService
 	tokenCacheInvalidator TokenCacheInvalidator
@@ -111,6 +112,11 @@ func NewRateLimitService(accountRepo AccountRepository, usageRepo UsageLogReposi
 // SetTimeoutCounterCache 设置超时计数器缓存（可选依赖）
 func (s *RateLimitService) SetTimeoutCounterCache(cache TimeoutCounterCache) {
 	s.timeoutCounterCache = cache
+}
+
+// SetHighTTFTCounterCache 设置高首字计数器缓存（可选依赖）
+func (s *RateLimitService) SetHighTTFTCounterCache(cache HighTTFTCounterCache) {
+	s.highTTFTCounterCache = cache
 }
 
 func (s *RateLimitService) SetOpenAIAPIKeyHealthCache(cache OpenAIAPIKeyHealthCache) {
@@ -2753,6 +2759,127 @@ func truncateTempUnschedMessage(body []byte, maxBytes int) string {
 		body = body[:maxBytes]
 	}
 	return strings.TrimSpace(string(body))
+}
+
+// HandleHighTTFT 处理高首字响应：同一账号连续多次 TTFT 超过阈值（滑动窗口内）
+// 时按配置处置该账号；正常首字（<= 阈值）会重置连续计数。返回是否触发了处置。
+func (s *RateLimitService) HandleHighTTFT(ctx context.Context, account *Account, model string, ttftSeconds int) bool {
+	if account == nil {
+		return false
+	}
+	if s.settingService == nil {
+		return false
+	}
+
+	settings, err := s.settingService.GetHighTTFTSettings(ctx)
+	if err != nil {
+		slog.Warn("high_ttft_get_settings_failed", "account_id", account.ID, "error", err)
+		return false
+	}
+	if !settings.Enabled || settings.Action == StreamTimeoutActionNone {
+		return false
+	}
+
+	// 正常首字：重置连续计数（连续判定语义）。
+	if ttftSeconds <= settings.TTFTThresholdSeconds {
+		if s.highTTFTCounterCache != nil {
+			if err := s.highTTFTCounterCache.ResetHighTTFTCount(ctx, account.ID); err != nil {
+				slog.Warn("high_ttft_reset_count_failed", "account_id", account.ID, "error", err)
+			}
+		}
+		return false
+	}
+
+	var count int64 = 1
+	if s.highTTFTCounterCache != nil {
+		count, err = s.highTTFTCounterCache.IncrementHighTTFTCount(ctx, account.ID, settings.ThresholdWindowMinutes)
+		if err != nil {
+			slog.Warn("high_ttft_increment_count_failed", "account_id", account.ID, "error", err)
+			count = 1
+		}
+	}
+
+	slog.Info("high_ttft_count", "account_id", account.ID, "count", count,
+		"threshold", settings.ThresholdCount, "window_minutes", settings.ThresholdWindowMinutes,
+		"ttft_threshold_seconds", settings.TTFTThresholdSeconds, "ttft_seconds", ttftSeconds, "model", model)
+
+	if count < int64(settings.ThresholdCount) {
+		return false
+	}
+
+	switch settings.Action {
+	case StreamTimeoutActionTempUnsched:
+		return s.triggerHighTTFTTempUnsched(ctx, account, settings, model, ttftSeconds)
+	case StreamTimeoutActionError:
+		return s.triggerHighTTFTError(ctx, account, model, ttftSeconds)
+	default:
+		return false
+	}
+}
+
+// triggerHighTTFTTempUnsched 高首字临时不可调度
+func (s *RateLimitService) triggerHighTTFTTempUnsched(ctx context.Context, account *Account, settings *HighTTFTSettings, model string, ttftSeconds int) bool {
+	now := time.Now()
+	until := now.Add(time.Duration(settings.TempUnschedMinutes) * time.Minute)
+
+	state := &TempUnschedState{
+		UntilUnix:       until.Unix(),
+		TriggeredAtUnix: now.Unix(),
+		StatusCode:      0,
+		MatchedKeyword:  "high_ttft",
+		RuleIndex:       -1,
+		ErrorMessage: fmt.Sprintf("High time-to-first-token (%ds > %ds) for model: %s",
+			ttftSeconds, settings.TTFTThresholdSeconds, model),
+	}
+
+	reason := ""
+	if raw, err := json.Marshal(state); err == nil {
+		reason = string(raw)
+	}
+	if reason == "" {
+		reason = state.ErrorMessage
+	}
+
+	s.notifyAccountSchedulingBlocked(account, until, "high_ttft_temp_unschedulable")
+	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+		slog.Warn("high_ttft_set_temp_unsched_failed", "account_id", account.ID, "error", err)
+		return false
+	}
+
+	if s.tempUnschedCache != nil {
+		if err := s.tempUnschedCache.SetTempUnsched(ctx, account.ID, state); err != nil {
+			slog.Warn("high_ttft_set_temp_unsched_cache_failed", "account_id", account.ID, "error", err)
+		}
+	}
+
+	if s.highTTFTCounterCache != nil {
+		if err := s.highTTFTCounterCache.ResetHighTTFTCount(ctx, account.ID); err != nil {
+			slog.Warn("high_ttft_reset_count_failed", "account_id", account.ID, "error", err)
+		}
+	}
+
+	slog.Info("high_ttft_temp_unschedulable", "account_id", account.ID, "until", until, "model", model)
+	return true
+}
+
+// triggerHighTTFTError 高首字标记错误状态
+func (s *RateLimitService) triggerHighTTFTError(ctx context.Context, account *Account, model string, ttftSeconds int) bool {
+	errorMsg := fmt.Sprintf("High time-to-first-token repeated failures (%ds) for model: %s", ttftSeconds, model)
+
+	s.notifyAccountSchedulingBlocked(account, time.Time{}, "high_ttft_error")
+	if err := s.accountRepo.SetError(ctx, account.ID, errorMsg); err != nil {
+		slog.Warn("high_ttft_set_error_failed", "account_id", account.ID, "error", err)
+		return false
+	}
+
+	if s.highTTFTCounterCache != nil {
+		if err := s.highTTFTCounterCache.ResetHighTTFTCount(ctx, account.ID); err != nil {
+			slog.Warn("high_ttft_reset_count_failed", "account_id", account.ID, "error", err)
+		}
+	}
+
+	slog.Info("high_ttft_error", "account_id", account.ID, "model", model)
+	return true
 }
 
 // HandleStreamTimeout 处理流数据超时
