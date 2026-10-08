@@ -1094,6 +1094,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			resp.Body = &openAIRequestContextReadCloser{ReadCloser: resp.Body, cleanup: headerGuard.close}
 		}
 
+		// 请求成功（非 4xx）：清零连续 401 计数（成功说明令牌/账号已恢复）。
+		if resp.StatusCode < 400 && s.rateLimitService != nil {
+			s.rateLimitService.NoteOAuthRequestSuccess(account.ID)
+		}
+
 		// Handle error response
 		if resp.StatusCode >= 400 {
 			respBody := s.readUpstreamErrorBody(resp)

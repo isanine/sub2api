@@ -367,3 +367,36 @@ func TestRateLimitService_HandleUpstreamError_OAuth401NoRefreshTokenSetsError(t 
 		require.Len(t, invalidator.accounts, 1)
 	})
 }
+
+
+// 连续 401 升级：前 2 次冷却（临时不可调度），第 3 次直接 SetError；成功后清零。
+func TestHandleUpstreamErrorOAuth401Escalation(t *testing.T) {
+	repo := &highTTFTRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{ID: 41, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"refresh_token": "rt"}}
+	headers := http.Header{}
+	body := `{"error":{"message":"unauthorized"}}`
+
+	// 第 1、2 次：走冷却（temp unsched），不 SetError。
+	for i := 0; i < 2; i++ {
+		disabled := svc.HandleUpstreamError(context.Background(), account, 401, headers, []byte(body), "gpt-5.6-sol")
+		require.True(t, disabled)
+	}
+	require.Len(t, repo.paused, 2, "前两次各进入一次冷却")
+	require.Empty(t, repo.errored)
+
+	// 第 3 次：连续 401 达到上限，直接 SetError。
+	disabled := svc.HandleUpstreamError(context.Background(), account, 401, headers, []byte(body), "gpt-5.6-sol")
+	require.True(t, disabled)
+	require.Equal(t, []int64{41}, repo.errored)
+
+	// 成功请求清零计数：之后重新走冷却。
+	svc.NoteOAuthRequestSuccess(41)
+	repo.errored = nil
+	repo.paused = nil
+	disabled = svc.HandleUpstreamError(context.Background(), account, 401, headers, []byte(body), "gpt-5.6-sol")
+	require.True(t, disabled)
+	require.Equal(t, []int64{41}, repo.paused)
+	require.Empty(t, repo.errored)
+}
