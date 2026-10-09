@@ -540,14 +540,16 @@
                     </p>
                   </div>
 
-                  <button
-                    :disabled="highTTFTSaving"
-                    class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50"
-                    @click="saveHighTTFTSettings"
-                  >
-                    {{ highTTFTSaving ? t("common.saving") : t("common.save") }}
-                  </button>
                 </div>
+
+                <!-- 保存按钮在折叠区外：关闭开关后仍可保存 -->
+                <button
+                  :disabled="highTTFTSaving"
+                  class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50"
+                  @click="saveHighTTFTSettings"
+                >
+                  {{ highTTFTSaving ? t("common.saving") : t("common.save") }}
+                </button>
               </template>
             </div>
           </div>
