@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -21,17 +20,14 @@ import (
 
 // RateLimitService 处理限流和过载状态管理
 type RateLimitService struct {
-	accountRepo          AccountRepository
-	usageRepo            UsageLogRepository
-	cfg                  *config.Config
-	geminiQuotaService   *GeminiQuotaService
-	tempUnschedCache     TempUnschedCache
-	openAIAPIKeyHealth   OpenAIAPIKeyHealthCache
-	timeoutCounterCache  TimeoutCounterCache
-	highTTFTCounterCache HighTTFTCounterCache
-	// oauth401Streak 记录 OAuth 账号连续 401 次数（无成功请求则不清零）；
-	// 达到阈值后不再进入冷却，直接 SetError。
-	oauth401Streak        sync.Map
+	accountRepo           AccountRepository
+	usageRepo             UsageLogRepository
+	cfg                   *config.Config
+	geminiQuotaService    *GeminiQuotaService
+	tempUnschedCache      TempUnschedCache
+	openAIAPIKeyHealth    OpenAIAPIKeyHealthCache
+	timeoutCounterCache   TimeoutCounterCache
+	highTTFTCounterCache  HighTTFTCounterCache
 	openAI403CounterCache OpenAI403CounterCache
 	settingService        *SettingService
 	tokenCacheInvalidator TokenCacheInvalidator
@@ -152,29 +148,6 @@ func (s *RateLimitService) IsOpenAIAdvancedSchedulerStickyWeightedEnabled(ctx co
 	}
 	gateway := &OpenAIGatewayService{rateLimitService: s}
 	return gateway.isOpenAIAdvancedSchedulerStickyWeightedEnabled(ctx)
-}
-
-// oauth401MaxConsecutive 同一账号连续 401 次数上限：超过后不再进入冷却，
-// 直接 SetError（说明令牌刷新已无法解决认证问题）。
-const oauth401MaxConsecutive = 3
-
-func (s *RateLimitService) incrOAuth401Streak(accountID int64) int64 {
-	raw, _ := s.oauth401Streak.Load(accountID)
-	counter, _ := raw.(*atomic.Int64)
-	if counter == nil {
-		counter = &atomic.Int64{}
-		s.oauth401Streak.Store(accountID, counter)
-	}
-	return counter.Add(1)
-}
-
-func (s *RateLimitService) resetOAuth401Streak(accountID int64) {
-	s.oauth401Streak.Delete(accountID)
-}
-
-// NoteOAuthRequestSuccess 请求成功（非 4xx）时清零连续 401 计数。
-func (s *RateLimitService) NoteOAuthRequestSuccess(accountID int64) {
-	s.resetOAuth401Streak(accountID)
 }
 
 func (s *RateLimitService) notifyAccountSchedulingBlocked(account *Account, until time.Time, reason string) {
@@ -484,20 +457,6 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		}
 		// OAuth 账号在 401 错误时临时不可调度（给 token 刷新窗口）；非 OAuth 账号保持原有 SetError 行为。
 		if authAccount.Type == AccountTypeOAuth {
-			// 连续多次 401（冷却刷新后依旧 401）说明不是令牌过期，而是账号本身
-			// 无法使用（封禁/吊销/权限回收）——继续走冷却只会无限循环，直接 SetError。
-			streak := s.incrOAuth401Streak(authAccount.ID)
-			if streak >= oauth401MaxConsecutive {
-				msg := "Authentication failed (401): still unauthorized after repeated cooldowns and token refreshes"
-				if upstreamMsg != "" {
-					msg = "OAuth 401 (persistent): " + upstreamMsg
-				}
-				slog.Warn("oauth_401_persistent_set_error", "account_id", authAccount.ID, "streak", streak)
-				s.handleAuthError(ctx, authAccount, msg)
-				s.resetOAuth401Streak(authAccount.ID)
-				shouldDisable = true
-				break
-			}
 			// 1. 失效缓存
 			if s.tokenCacheInvalidator != nil {
 				if err := s.tokenCacheInvalidator.InvalidateToken(ctx, authAccount); err != nil {
